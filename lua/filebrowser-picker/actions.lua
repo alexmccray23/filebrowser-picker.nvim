@@ -228,6 +228,16 @@ function M.confirm(picker, item)
 	end
 end
 
+---Action: Conditional backspace - goto parent if prompt empty, otherwise backspace
+---@param picker any
+function M.conditional_backspace(picker)
+	if picker.input:get() == "" then
+		M.goto_parent(picker)
+	else
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<BS>", true, false, true), "tn", false)
+	end
+end
+
 ---Action: Go to parent directory
 ---@param picker any
 function M.goto_parent(picker)
@@ -420,7 +430,7 @@ function M.delete(picker, item)
 
 	vim.ui.select({ "No", "Yes" }, {
 		prompt = "Delete " .. item.text .. "?",
-	}, function(choice, idx)
+	}, function(_, idx)
 		if idx ~= 2 then
 			return
 		end
@@ -484,6 +494,7 @@ function M.get_actions()
 		confirm = function(picker, item)
 			M.confirm(picker, item)
 		end,
+		conditional_backspace = M.conditional_backspace,
 		goto_parent = M.goto_parent,
 		goto_home = M.goto_home,
 		goto_cwd = M.goto_cwd,
@@ -506,12 +517,7 @@ end
 function M.get_keymaps(keymaps)
 	local result = {}
 	for key, action in pairs(keymaps) do
-		if key == "<BS>" then
-			-- Backspace only works in normal mode for now (reliable parent navigation)
-			result[key] = { action, mode = { "n" } }
-		else
-			result[key] = { action, mode = { "n", "i" } }
-		end
+		result[key] = { action, mode = { "n", "i" } }
 	end
 	return result
 end
