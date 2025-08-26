@@ -156,3 +156,10 @@ end, { desc = "File Browser" })
 - **Modern Architecture**: Built on snacks.nvim's advanced picker
 - **Enhanced Keymaps**: Added `<BS>` for parent directory navigation (matches telescope-file-browser behavior)
 - **Keymap Changes**: `<C-r>` instead of `<C-w>` for goto_cwd (avoids window command conflicts)
+
+## Acknowledgments
+
+This plugin is heavily inspired by and builds upon the excellent work of:
+
+- [nvim-telescope/telescope-file-browser.nvim](https://github.com/nvim-telescope/telescope-file-browser.nvim)
+- [folke/snacks.nvim](https://github.com/folke/snacks.nvim)
