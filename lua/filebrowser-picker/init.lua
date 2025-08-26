@@ -92,7 +92,7 @@ function M.file_browser(opts)
 	local picker_opts = {
 		source = "filebrowser",
 		cwd = get_initial_directory(opts.cwd),
-		title = "File Browser",
+		title = get_initial_directory(opts.cwd),
 		finder = actions.create_finder,
 		format = function(item)
 			return actions.format_item(item, opts)

@@ -141,7 +141,7 @@ function M.format_item(item, opts)
 	local text_hl = "Normal"
 
 	if item.dir then
-		icon = item.open and opts.icons.folder_open or opts.icons.folder_closed
+		icon = opts.icons.folder_closed
 		icon_hl = "Directory"
 		text_hl = "Directory" -- Keep directory name highlighted
 	elseif item.type == "link" then
@@ -194,6 +194,10 @@ local function navigate_to_directory(picker, path)
 	-- Change picker's working directory (following snacks explorer pattern)
 	picker:set_cwd(path)
 
+	-- Update the picker title to show current path
+	picker.title = path
+	picker:update_titles()
+
 	-- Clear any search pattern to show directory contents
 	picker.input:set("", "")
 
@@ -209,8 +213,7 @@ end
 ---Action: Confirm/Open selected item
 ---@param picker any
 ---@param item FileBrowserItem
----@param opts table
-function M.confirm(picker, item, opts)
+function M.confirm(picker, item)
 	if not item then
 		return
 	end
@@ -241,17 +244,19 @@ function M.goto_parent(picker)
 	-- Fallback to system cwd
 	current = current or uv.cwd()
 
-	local parent = safe_dirname(current)
+	if current ~= nil then
+		local parent = safe_dirname(current)
 
-	if parent and parent ~= current then
-		navigate_to_directory(picker, parent)
+		if parent and parent ~= current then
+			navigate_to_directory(picker, parent)
+		end
 	end
 end
 
 ---Action: Go to home directory
 ---@param picker any
 function M.goto_home(picker)
-	local home_dir = os.getenv("HOME") or "/home/" .. (os.getenv("USER") or "user")
+	local home_dir = os.getenv("HOME") or ("/home/" .. (os.getenv("USER") or "user"))
 	navigate_to_directory(picker, home_dir)
 end
 
@@ -260,7 +265,9 @@ end
 function M.goto_cwd(picker)
 	-- Use libuv to get cwd safely in async context
 	local cwd = uv.cwd()
-	navigate_to_directory(picker, cwd)
+	if cwd ~= nil then
+		navigate_to_directory(picker, cwd)
+	end
 end
 
 ---Action: Change to selected directory
@@ -471,12 +478,11 @@ function M.edit_tab(picker, item)
 end
 
 ---Get all actions for picker configuration
----@param opts table
 ---@return table
-function M.get_actions(opts)
+function M.get_actions()
 	return {
 		confirm = function(picker, item)
-			M.confirm(picker, item, opts)
+			M.confirm(picker, item)
 		end,
 		goto_parent = M.goto_parent,
 		goto_home = M.goto_home,
