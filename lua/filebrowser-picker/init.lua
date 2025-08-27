@@ -65,37 +65,6 @@ M.config = {
 -- Export actions for easy access
 M.actions = actions
 
----Setup the file browser picker with user configuration
----@param opts? FileBrowserPicker.Config
-function M.setup(opts)
-	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
-end
-
----Quick access functions (telescope-file-browser style)
-
----Open file browser at current buffer's directory
----@param opts? FileBrowserPicker.Config
-function M.file_browser_here(opts)
-	opts = opts or {}
-	opts.cwd = util.get_initial_directory(nil)
-	return M.file_browser(opts)
-end
-
----Open file browser at project root (git root or cwd)
----@param opts? FileBrowserPicker.Config
-function M.file_browser_project_root(opts)
-	opts = opts or {}
-	-- Try to find git root using cached lookup
-	local current_file = vim.api.nvim_buf_get_name(0)
-	local git_root
-	if current_file and current_file ~= "" then
-		git_root = util.get_git_root(vim.fn.fnamemodify(current_file, ":h"))
-	end
-	opts.cwd = git_root or vim.fn.getcwd()
-	return M.file_browser(opts)
-end
-
--- Normalize roots configuration
 local function normalize_roots(opts)
 	local roots = opts.roots
 	if not roots then
@@ -125,192 +94,365 @@ local function normalize_roots(opts)
 	return roots
 end
 
----Open the file browser picker
+---Setup the file browser picker with user configuration
+---@param opts? FileBrowserPicker.Config
+function M.setup(opts)
+	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+end
+---Open the file browser picker (patched for dynamic roots + streaming)
 ---@param opts? FileBrowserPicker.Config
 function M.file_browser(opts)
 	opts = vim.tbl_deep_extend("force", M.config, opts or {})
 
-	-- Get Snacks picker
-	local picker_ok, Snacks = pcall(require, "snacks")
-	if not picker_ok then
+	local ok, Snacks = pcall(require, "snacks")
+	if not ok then
 		error("filebrowser-picker.nvim requires snacks.nvim")
 	end
 
-	-- Normalize and validate roots
-	local roots = normalize_roots(opts)
-	local initial_cwd = roots[1]
+	-- normalize roots once; we’ll mutate this list at runtime
+	local roots = (function()
+		local r = normalize_roots(opts)
+		if #r == 0 then
+			r = { util.get_initial_directory(opts.cwd) }
+		end
+		return r
+	end)()
 
-	-- Auto-detect file finder usage - default to directory browser for better navigation
-	if opts.use_file_finder == nil then
-		opts.use_file_finder = false
-	end
-
-	-- State management for root cycling - use table so it's mutable across closures
+	-- live state (mutated by actions)
 	local state = {
-		current_root_idx = 1,
 		roots = roots,
+		idx = 1, -- active root (1-based)
+		prev_dir = nil, -- for "-" jump
 	}
 
-	-- Debug information
-	if opts.debug then
-		print("FileBrowser setup:")
-		print("  Roots:", vim.inspect(roots))
-		print("  Use file finder:", opts.use_file_finder)
-		print("  Current root idx:", state.current_root_idx)
+	local function active_root()
+		return state.roots[state.idx]
+	end
+	local function title_for(root_idx, dir)
+		local path = dir or active_root()
+		return (#state.roots > 1) and string.format("[%d/%d] %s", root_idx or state.idx, #state.roots, path) or path
 	end
 
-	-- Pass roots to options for actions to access
-	opts._roots = roots
-	opts._current_root_idx = state.current_root_idx
-
-	-- Helper function to generate title
-	local function get_title(root_idx, current_dir)
-		if #roots > 1 then
-			return string.format("[%d/%d] %s", root_idx or state.current_root_idx, #roots, current_dir or initial_cwd)
-		else
-			return current_dir or initial_cwd
+	-- tiny helper: selection UI that works with or without Snacks.select
+	local function ui_select(items, prompt, cb)
+		if Snacks.picker.select then
+			return Snacks.picker.select(items, { prompt = prompt or "Select" }, cb)
 		end
+		vim.ui.select(items, { prompt = prompt or "Select" }, cb)
 	end
 
-	-- Build picker configuration
+	-- SUGGESTED ROOTS (git, LSP, home, cwd)
+	local function discover_roots()
+		local out, seen = {}, {}
+		local function add(p)
+			if not p or p == "" then
+				return
+			end
+			p = vim.fs.normalize(vim.fn.fnamemodify(p, ":p"))
+			if vim.fn.isdirectory(p) == 1 and not seen[p] then
+				out[#out + 1] = p
+				seen[p] = true
+			end
+		end
+		add(vim.fn.getcwd())
+		add(vim.loop.os_homedir())
+		local gitdir = vim.fs.find(".git", { upward = true, stop = vim.loop.os_homedir() })[1]
+		if gitdir then
+			add(vim.fs.dirname(gitdir))
+		end
+		for _, client in pairs(vim.lsp.get_clients({ bufnr = 0 })) do
+			if client.workspace_folders then
+				for _, wf in ipairs(client.workspace_folders) do
+					add(vim.uri_to_fname(wf.uri))
+				end
+			end
+			if client.config and client.config.root_dir then
+				add(client.config.root_dir)
+			end
+		end
+		return out
+	end
+
+	-- SCANNING (streaming; zero busy-wait)
+	local function start_scanner(ctx)
+		if not opts.use_file_finder then
+			return nil, nil, nil
+		end
+
+		local scan_opts = {
+			hidden = opts.hidden,
+			follow_symlinks = opts.follow_symlinks,
+			respect_gitignore = opts.respect_gitignore,
+			use_fd = opts.use_fd,
+			use_rg = opts.use_rg,
+			excludes = opts.excludes,
+		}
+
+		-- If file_finder mode + multiple roots, scan ALL roots unless explicitly disabled
+		local scan_roots
+		if #state.roots > 1 and (opts.search_all_roots ~= false) then
+			scan_roots = state.roots
+		else
+			scan_roots = { active_root() }
+		end
+
+		local list = {} -- items table returned to Snacks
+		local pushed = 0
+		local scan_fn = scanner.build_scanner(scan_opts, scan_roots)
+
+		local cancel = scan_fn(function(file_path)
+			local name = vim.fs.basename(file_path)
+			local st = uv.fs_stat(file_path)
+			list[#list + 1] = {
+				file = file_path,
+				text = name,
+				dir = false,
+				hidden = name:sub(1, 1) == ".",
+				size = st and st.size or 0,
+				mtime = st and st.mtime and st.mtime.sec or 0,
+				type = "file",
+			}
+			pushed = pushed + 1
+			if ctx and ctx.picker and (pushed % 100 == 0) then
+				vim.schedule(function()
+					if ctx.picker and not ctx.picker.closed then
+						ctx.picker:refresh()
+					end
+				end)
+			end
+		end, function()
+			if ctx and ctx.picker then
+				vim.schedule(function()
+					if not ctx.picker.closed then
+						ctx.picker:refresh()
+					end
+				end)
+			end
+		end)
+
+		return list, cancel, scan_roots
+	end
+
+	-- DIRECTORY LISTING (non-finder mode)
+	local function read_dir(cwd)
+		local items = util.scan_directory(cwd, opts)
+		-- add "../" entry unless at filesystem root
+		local parent = util.safe_dirname(cwd)
+		if parent and parent ~= cwd then
+			table.insert(items, 1, {
+				file = parent,
+				text = "../",
+				dir = true,
+				hidden = false,
+				size = 0,
+				mtime = 0,
+				type = "directory",
+			})
+		end
+		return items
+	end
+
+	local initial_cwd = active_root()
+
 	local picker_opts = {
 		cwd = initial_cwd,
-		title = get_title(state.current_root_idx, initial_cwd),
-		finder = function(fopts, ctx)
-			-- Determine the current active root (read dynamically from state)
-			local current_idx = state.current_root_idx
-			local active_root = state.roots[current_idx]
+		title = title_for(state.idx, initial_cwd),
 
-			-- Use file finder only if explicitly enabled
-			local use_file_finder = opts.use_file_finder == true
-
-			if use_file_finder and opts._roots then
-				-- File discovery mode - scan synchronously but yield every 50 items
-				local scan_opts = {
-					hidden = opts.hidden,
-					follow_symlinks = opts.follow_symlinks,
-					respect_gitignore = opts.respect_gitignore,
-					use_fd = opts.use_fd,
-					use_rg = opts.use_rg,
-					excludes = opts.excludes,
-				}
-
-				-- Scan only the active root (not all roots)
-				local scan_fn = scanner.build_scanner(scan_opts, { active_root })
-				local items = {}
-				local item_count = 0
-				local completed = false
-
-				local cancel_scan = scan_fn(function(file_path)
-					-- Create file item
-					local basename = vim.fs.basename(file_path)
-					local stat = uv.fs_stat(file_path)
-
-					table.insert(items, {
-						file = file_path,
-						text = basename,
-						dir = false,
-						hidden = basename:sub(1, 1) == ".",
-						size = stat and stat.size or 0,
-						mtime = stat and stat.mtime and stat.mtime.sec or 0,
-						type = "file",
-					})
-
-					-- Yield periodically to prevent blocking
-					item_count = item_count + 1
-					if item_count % 50 == 0 then
-						vim.schedule(function() end) -- Allow UI updates
-					end
-				end, function()
-					completed = true
-				end)
-
-				-- Wait for scan to complete, but yield control
-				local start_time = uv.hrtime()
-				local timeout = 10000 -- 10 second timeout
-				while not completed and (uv.hrtime() - start_time) / 1000000 < timeout do
-					vim.wait(1, function()
-						return completed
-					end, 1)
-				end
-
-				-- Store cancel function for cleanup
+		-- Snacks supports either :items or :finder; we keep your finder shape
+		finder = function(_, ctx)
+			-- Always rebuild scanner on (re)invoke so it follows state changes
+			if opts.use_file_finder then
+				local list, cancel = start_scanner(ctx)
 				if ctx and ctx.picker then
-					ctx.picker._cancel_scan = cancel_scan
+					-- ensure previous scan is cancelled on re-find or close
+					if ctx.picker._fbp_cancel_scan and ctx.picker._fbp_cancel_scan ~= cancel then
+						pcall(ctx.picker._fbp_cancel_scan)
+					end
+					ctx.picker._fbp_cancel_scan = cancel
 				end
-
-				return items
+				return list or {}
 			else
-				-- Directory browsing mode - use picker's current cwd
-				local cwd = ctx and ctx.picker and ctx.picker:cwd() or active_root
-				local dir_items = util.scan_directory(cwd, opts)
-
-				-- Add parent directory entry if not at root
-				local home_dir = (os.getenv("HOME") or "/home/") .. (os.getenv("USER") or "user")
-				if cwd ~= "/" and cwd ~= home_dir then
-					table.insert(dir_items, 1, {
-						file = util.safe_dirname(cwd),
-						text = "../",
-						dir = true,
-						hidden = false,
-						size = 0,
-						mtime = 0,
-						type = "directory",
-					})
-				end
-
-				return dir_items
+				local cwd = (ctx and ctx.picker and ctx.picker:cwd()) or active_root()
+				return read_dir(cwd)
 			end
 		end,
+
 		format = function(item)
 			return actions.format_item(item, opts)
 		end,
+
 		actions = vim.tbl_extend("force", actions.get_actions(opts), {
-			cycle_roots = function(picker)
+			-- open preserves your existing actions.* behavior
+
+			-- Root cycling (always updates cwd for clarity)
+			cycle_roots = function(p)
 				if #state.roots < 2 then
-					vim.notify("Only one root directory configured", vim.log.levels.INFO)
+					vim.notify("Only one root configured", vim.log.levels.INFO)
 					return
 				end
-
-				-- Update the mutable state
-				local old_idx = state.current_root_idx
-				state.current_root_idx = (state.current_root_idx % #state.roots) + 1
-				local new_root = state.roots[state.current_root_idx]
-				opts._current_root_idx = state.current_root_idx
-
-				-- For multiple roots, we don't change picker cwd since we're discovering across all roots
-				-- But for single directory mode, we do change cwd
-				if not opts.use_file_finder then
-					picker:set_cwd(new_root)
+				state.idx = (state.idx % #state.roots) + 1
+				local new_root = active_root()
+				p:set_cwd(new_root)
+				p.title = title_for(state.idx, new_root)
+				p:update_titles()
+				p:find({ refresh = true })
+			end,
+			cycle_roots_prev = function(p)
+				if #state.roots < 2 then
+					return
 				end
+				state.idx = ((state.idx - 2) % #state.roots) + 1
+				local new_root = active_root()
+				p:set_cwd(new_root)
+				p.title = title_for(state.idx, new_root)
+				p:update_titles()
+				p:find({ refresh = true })
+			end,
 
-				picker.title = get_title(state.current_root_idx, new_root)
-				picker:update_titles()
-				picker:find({ refresh = true })
+			-- Dynamic roots
+			root_add_here = function(p)
+				local here = p:cwd()
+				-- de-dup
+				for i, r in ipairs(state.roots) do
+					if vim.fs.normalize(r) == vim.fs.normalize(here) then
+						state.idx = i
+						p.title = title_for(state.idx, here)
+						p:update_titles()
+						return
+					end
+				end
+				table.insert(state.roots, state.idx + 1, here)
+				state.idx = state.idx + 1
+				p.title = title_for(state.idx, here)
+				p:update_titles()
+			end,
+
+			root_add_path = function(p)
+				local path = vim.fn.input("Add root path: ", p:cwd(), "file")
+				if path == nil or path == "" then
+					return
+				end
+				path = vim.fn.fnamemodify(vim.fn.expand(path), ":p")
+				if vim.fn.isdirectory(path) ~= 1 then
+					vim.notify("Not a directory: " .. path, vim.log.levels.WARN)
+					return
+				end
+				table.insert(state.roots, state.idx + 1, path)
+				state.idx = state.idx + 1
+				p:set_cwd(path)
+				p.title = title_for(state.idx, path)
+				p:update_titles()
+				p:find({ refresh = true })
+			end,
+
+			root_pick_suggested = function(p)
+				local cand = discover_roots()
+				ui_select(cand, "Add workspace root", function(choice)
+					if not choice then
+						return
+					end
+					table.insert(state.roots, state.idx + 1, choice)
+					state.idx = state.idx + 1
+					p:set_cwd(choice)
+					p.title = title_for(state.idx, choice)
+					p:update_titles()
+					p:find({ refresh = true })
+				end)
+			end,
+
+			root_remove = function(p)
+				if #state.roots == 0 then
+					return
+				end
+				table.remove(state.roots, state.idx)
+				if #state.roots == 0 then
+					state.roots = { util.get_initial_directory(nil) }
+				end
+				if state.idx > #state.roots then
+					state.idx = #state.roots
+				end
+				local new_root = active_root()
+				p:set_cwd(new_root)
+				p.title = title_for(state.idx, new_root)
+				p:update_titles()
+				p:find({ refresh = true })
+			end,
+
+			-- Quality-of-life nav (keeps previous dir for "-")
+			goto_parent = function(p)
+				local cur = p:cwd()
+				local parent = util.safe_dirname(cur)
+				if parent and parent ~= cur then
+					state.prev_dir = cur
+					p:set_cwd(parent)
+					p.title = title_for(state.idx, parent)
+					p:update_titles()
+					p:find({ refresh = true })
+				end
+			end,
+			goto_previous_dir = function(p)
+				if state.prev_dir and state.prev_dir ~= p:cwd() then
+					local tmp = p:cwd()
+					p:set_cwd(state.prev_dir)
+					state.prev_dir = tmp
+					p.title = title_for(state.idx, p:cwd())
+					p:update_titles()
+					p:find({ refresh = true })
+				end
+			end,
+			goto_project_root = function(p)
+				local cur = p:cwd()
+				local git = util.get_git_root(cur) or cur
+				if git ~= cur then
+					state.prev_dir = cur
+					p:set_cwd(git)
+					p.title = title_for(state.idx, git)
+					p:update_titles()
+					p:find({ refresh = true })
+				end
 			end,
 		}),
+
+		-- Keep your dynamic layout behavior
 		layout = opts.dynamic_layout and {
 			cycle = true,
 			preset = function()
 				return vim.o.columns >= (opts.layout_width_threshold or 120) and "default" or "vertical"
 			end,
-		} or {
-			preset = "default",
-		},
+		} or { preset = "default" },
+
+		-- add keymaps for the new actions without breaking yours
 		win = {
 			input = {
-				keys = actions.get_keymaps(opts.keymaps),
+				keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
+					["gr"] = "root_add_here",
+					["gR"] = "root_add_path",
+					["<leader>wr"] = "root_pick_suggested",
+					["<leader>wR"] = "root_remove",
+					["<C-p>"] = "cycle_roots_prev",
+				})),
 			},
 			list = {
-				keys = actions.get_keymaps(opts.keymaps),
+				keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
+					["gr"] = "root_add_here",
+					["gR"] = "root_add_path",
+					["<leader>wr"] = "root_pick_suggested",
+					["<leader>wR"] = "root_remove",
+					["<C-p>"] = "cycle_roots_prev",
+				})),
 			},
 		},
-		-- Store additional metadata
-		_roots = roots,
-		_current_root_idx = current_root_idx,
+
+		_roots = roots, -- exposed for other modules if you really want
+		on_close = function(p)
+			if p and p._fbp_cancel_scan then
+				pcall(p._fbp_cancel_scan)
+				p._fbp_cancel_scan = nil
+			end
+		end,
 	}
 
-	Snacks.picker.pick(picker_opts)
+	local picker = Snacks.picker.pick(picker_opts)
 end
 
 return M
