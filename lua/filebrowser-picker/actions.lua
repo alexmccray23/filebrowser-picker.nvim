@@ -2,6 +2,7 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 local util = require("filebrowser-picker.util")
+local scanner = require("filebrowser-picker.scanner")
 
 ---@class FileBrowserItem
 ---@field file string Absolute path to the file/directory
@@ -101,11 +102,11 @@ local function safe_dirname(path)
 	return "/" .. table.concat(parts, "/")
 end
 
----Create the finder function for snacks picker
+---Create finder for directory browsing (current behavior)
 ---@param opts table
 ---@param ctx table
 ---@return function
-function M.create_finder(opts, ctx)
+function M.create_directory_finder(opts, ctx)
 	return function(cb)
 		local cwd = ctx.picker:cwd()
 		local config = opts or {}
@@ -129,6 +130,77 @@ function M.create_finder(opts, ctx)
 		for _, item in ipairs(items) do
 			cb(item)
 		end
+	end
+end
+
+---Create finder for fast file discovery across roots
+---@param opts table
+---@param roots string[]
+---@param ctx table
+---@return function
+function M.create_file_finder(opts, roots, ctx)
+	return function(cb)
+		local config = opts or {}
+		local scan_opts = {
+			hidden = config.hidden,
+			follow_symlinks = config.follow_symlinks,
+			respect_gitignore = config.respect_gitignore,
+			use_fd = config.use_fd,
+			use_rg = config.use_rg,
+			excludes = config.excludes,
+		}
+
+		local scan_fn = scanner.build_scanner(scan_opts, roots)
+		local item_count = 0
+		local batch_size = 100
+
+		local cancel_scan = scan_fn(
+			function(file_path)
+				-- Create file item
+				local basename = vim.fs.basename(file_path)
+				local stat = uv.fs_stat(file_path)
+				
+				cb({
+					file = file_path,
+					text = basename,
+					dir = false,
+					hidden = basename:sub(1, 1) == ".",
+					size = stat and stat.size or 0,
+					mtime = stat and stat.mtime and stat.mtime.sec or 0,
+					type = "file",
+				})
+
+				-- Batch updates for performance
+				item_count = item_count + 1
+				if item_count % batch_size == 0 then
+					-- Allow UI to update
+					vim.schedule(function() end)
+				end
+			end,
+			function()
+				-- Scan complete
+			end
+		)
+
+		-- Store cancel function on context for cleanup
+		if ctx and ctx.picker then
+			ctx.picker._cancel_scan = cancel_scan
+		end
+	end
+end
+
+---Create the finder function for snacks picker (adaptive)
+---@param opts table
+---@param ctx table
+---@return function
+function M.create_finder(opts, ctx)
+	-- Use file finder if we have multiple roots or fast discovery is enabled
+	local use_file_finder = opts.use_file_finder or (opts._roots and #opts._roots > 1)
+	
+	if use_file_finder and opts._roots then
+		return M.create_file_finder(opts, opts._roots, ctx)
+	else
+		return M.create_directory_finder(opts, ctx)
 	end
 end
 
@@ -280,6 +352,46 @@ function M.goto_cwd(picker)
 	end
 end
 
+---Action: Go to project root (git root)
+---@param picker any
+function M.goto_project_root(picker)
+	-- Try to find git root
+	local current_dir = picker:cwd() or uv.cwd()
+	
+	-- Walk up the directory tree looking for .git
+	local function find_git_root(path)
+		while path and path ~= "/" do
+			if vim.fn.isdirectory(path .. "/.git") == 1 then
+				return path
+			end
+			path = safe_dirname(path)
+		end
+		return nil
+	end
+	
+	local git_root = find_git_root(current_dir)
+	if git_root then
+		navigate_to_directory(picker, git_root)
+	else
+		vim.schedule(function()
+			vim.notify("No git repository found", vim.log.levels.WARN)
+		end)
+	end
+end
+
+---Action: Go to previous directory (stored in history)
+---@param picker any
+function M.goto_previous_dir(picker)
+	-- Simple implementation - could be enhanced with full history stack
+	local current_dir = picker:cwd()
+	if current_dir then
+		local parent = safe_dirname(current_dir)
+		if parent and parent ~= current_dir then
+			navigate_to_directory(picker, parent)
+		end
+	end
+end
+
 ---Action: Change to selected directory
 ---@param picker any
 ---@param item? FileBrowserItem
@@ -336,7 +448,7 @@ function M.create_file(picker)
 	end)
 end
 
----Action: Rename selected file
+---Action: Rename selected file (using Snacks' LSP-aware rename)
 ---@param picker any
 ---@param item? FileBrowserItem
 function M.rename(picker, item)
@@ -344,25 +456,15 @@ function M.rename(picker, item)
 		return
 	end
 
-	vim.ui.input({
-		prompt = "Rename to: ",
-		default = item.text,
-	}, function(new_name)
-		if not new_name or new_name == "" or new_name == item.text then
-			return
-		end
-
-		local old_path = item.file
-		local new_path = safe_dirname(old_path) .. "/" .. new_name
-
-		local ok, err = os.rename(old_path, new_path)
-		if ok then
-			vim.notify("Renamed: " .. item.text .. " -> " .. new_name)
-			picker:find({ refresh = true })
-		else
-			vim.notify("Failed to rename: " .. (err or "unknown error"), vim.log.levels.ERROR)
-		end
-	end)
+	Snacks.rename.rename_file({
+		from = item.file,
+		on_rename = function(new_path, old_path, ok)
+			if ok then
+				-- Refresh picker after successful rename
+				picker:find({ refresh = true })
+			end
+		end,
+	})
 end
 
 ---Action: Move selected file
@@ -497,6 +599,13 @@ function M.set_pwd(picker)
 	end
 end
 
+---Action: Cycle through multiple roots
+---@param picker any
+function M.cycle_roots(picker)
+	-- This will be implemented by the picker configuration
+	-- The actual implementation is in init.lua where roots are managed
+end
+
 ---Get all actions for picker configuration
 ---@return table
 function M.get_actions()
@@ -508,6 +617,8 @@ function M.get_actions()
 		goto_parent = M.goto_parent,
 		goto_home = M.goto_home,
 		goto_cwd = M.goto_cwd,
+		goto_project_root = M.goto_project_root,
+		goto_previous_dir = M.goto_previous_dir,
 		change_directory = M.change_directory,
 		toggle_hidden = M.toggle_hidden,
 		create_file = M.create_file,
@@ -519,6 +630,7 @@ function M.get_actions()
 		edit_split = M.edit_split,
 		edit_tab = M.edit_tab,
 		set_pwd = M.set_pwd,
+		cycle_roots = M.cycle_roots,
 	}
 end
 
