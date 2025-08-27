@@ -1,10 +1,11 @@
----@class FileBrowserPicker
----@field actions table<string, function>
 local M = {}
 
 -- Import dependencies (you'll need to ensure these are available)
 local actions = require("filebrowser-picker.actions")
 local util = require("filebrowser-picker.util")
+
+---@class FileBrowserPicker
+---@field actions table<string, function>
 
 ---@class FileBrowserPicker.Config
 ---@field cwd? string Initial directory (default: current working directory)
@@ -31,11 +32,12 @@ M.config = {
 		["<CR>"] = "confirm",
 		["<C-v>"] = "edit_vsplit",
 		["<C-x>"] = "edit_split",
-		["<C-t>"] = "edit_tab",
-		["<BS>"] = "conditional_backspace",
+		["<A-t>"] = "edit_tab",
+		["<bs>"] = "conditional_backspace",
 		["<C-g>"] = "goto_parent",
 		["<C-e>"] = "goto_home",
 		["<C-r>"] = "goto_cwd",
+		["<C-t>"] = "set_pwd",
 		["<A-c>"] = "create_file",
 		["<A-r>"] = "rename",
 		["<A-m>"] = "move",

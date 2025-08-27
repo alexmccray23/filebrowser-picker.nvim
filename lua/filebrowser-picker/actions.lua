@@ -487,6 +487,16 @@ function M.edit_tab(picker, item)
 	vim.cmd("tabedit " .. vim.fn.fnameescape(item.file))
 end
 
+---Action: Set current working directory to displayed directory
+---@param picker any
+function M.set_pwd(picker)
+	local current_dir = picker:cwd()
+	if current_dir then
+		vim.cmd("cd " .. vim.fn.fnameescape(current_dir))
+		vim.notify("Set working directory to: " .. current_dir)
+	end
+end
+
 ---Get all actions for picker configuration
 ---@return table
 function M.get_actions()
@@ -508,6 +518,7 @@ function M.get_actions()
 		edit_vsplit = M.edit_vsplit,
 		edit_split = M.edit_split,
 		edit_tab = M.edit_tab,
+		set_pwd = M.set_pwd,
 	}
 end
 

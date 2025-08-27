@@ -5,14 +5,9 @@ A file browser for Neovim using snacks.nvim's picker, providing telescope-file-b
 ## Features
 
 - 🚀 **Fast async operations** powered by snacks.nvim picker
-- 📁 **Unlimited directory navigation** like telescope-file-browser
-- 🎯 **Familiar keybindings** from telescope-file-browser
+- 📁 **Persistent directory navigation** like telescope-file-browser
 - 📝 **File operations**: create, rename, move, copy, delete
 - 👁️ **Hidden files toggle**
-- 🔍 **Live search** within directories
-- 📂 **Directory-first sorting**
-- 🎨 **Smart icon detection** using mini.icons or nvim-web-devicons with color support
-- 🧭 **Smart initial directory** detection from current buffer
 
 ## Requirements
 
@@ -85,11 +80,12 @@ require("filebrowser-picker").setup({
 | `<CR>` | confirm | Open file/navigate to directory |
 | `<C-v>` | edit_vsplit | Open in vertical split |
 | `<C-x>` | edit_split | Open in horizontal split |
-| `<C-t>` | edit_tab | Open in new tab |
-| `<BS>` | goto_parent | Go to parent directory (normal mode only) |
+| `<A-t>` | edit_tab | Open in new tab |
+| `<bs>` | conditional_backspace | Goes to parent dir if prompt is empty |
 | `<C-g>` | goto_parent | Go to parent directory |
 | `<C-e>` | goto_home | Go to home directory |
 | `<C-r>` | goto_cwd | Go to working directory |
+| `<C-t>` | set_pwd | Sets current working directory |
 | `<A-h>` | toggle_hidden | Toggle hidden files |
 | `<A-c>` | create_file | Create new file/directory |
 | `<A-r>` | rename | Rename selected item |
@@ -97,12 +93,6 @@ require("filebrowser-picker").setup({
 | `<A-y>` | copy | Copy selected item |
 | `<A-d>` | delete | Delete selected item |
 
-## Key Differences from telescope-file-browser
-
-✅ **Better Performance**: Async operations vs synchronous
-✅ **Modern UI**: Uses snacks.nvim's advanced picker interface  
-✅ **Unlimited Navigation**: Just like telescope-file-browser's `goto_parent_dir`
-✅ **Same UX**: Familiar directory switching and file operations
 
 ## Configuration
 
@@ -149,13 +139,6 @@ vim.keymap.set("n", "<leader>fb", function()
   require("filebrowser-picker").file_browser()
 end, { desc = "File Browser" })
 ```
-
-## Key Changes from telescope-file-browser
-
-- **Better Performance**: Async operations prevent UI blocking
-- **Modern Architecture**: Built on snacks.nvim's advanced picker
-- **Enhanced Keymaps**: Added `<BS>` for parent directory navigation (matches telescope-file-browser behavior)
-- **Keymap Changes**: `<C-r>` instead of `<C-w>` for goto_cwd (avoids window command conflicts)
 
 ## Acknowledgments
 
