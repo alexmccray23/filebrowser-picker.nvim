@@ -25,7 +25,7 @@ local function spawn_streaming(cmd, args, on_line, on_exit, cwd)
 	handle = uv.spawn(cmd, {
 		args = args,
 		stdio = { nil, stdout, stderr },
-		cwd = cwd
+		cwd = cwd,
 	}, function(code, _)
 		stdout:read_stop()
 		stderr:read_stop()
@@ -79,22 +79,22 @@ end
 ---@return function
 local function build_fd_scanner(opts, roots)
 	local base_args = { "--type", "f", "--color", "never" }
-	
+
 	if opts.hidden then
 		table.insert(base_args, "--hidden")
 	end
-	
+
 	if opts.follow_symlinks then
 		table.insert(base_args, "--follow")
 	end
-	
+
 	-- Add excludes
 	local excludes = opts.excludes or {}
 	if not opts.respect_gitignore then
 		table.insert(base_args, "--no-ignore")
 		table.insert(base_args, "--no-ignore-vcs")
 	end
-	
+
 	for _, pattern in ipairs(excludes) do
 		table.insert(base_args, "--exclude")
 		table.insert(base_args, pattern)
@@ -142,11 +142,11 @@ end
 ---@return function
 local function build_rg_scanner(opts, roots)
 	local base_args = { "--files", "--no-color" }
-	
+
 	if opts.hidden then
 		table.insert(base_args, "--hidden")
 	end
-	
+
 	if not opts.respect_gitignore then
 		table.insert(base_args, "--no-ignore")
 		table.insert(base_args, "--no-ignore-vcs")

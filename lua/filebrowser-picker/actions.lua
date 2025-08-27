@@ -13,95 +13,6 @@ local scanner = require("filebrowser-picker.scanner")
 ---@field mtime number Last modified time
 ---@field type string File type (file, directory, symlink)
 
----Check if a path is a directory
----@param path string
----@return boolean
-local function is_directory(path)
-	local stat = uv.fs_stat(path)
-	return stat and stat.type == "directory" or false
-end
-
----Check if a file is hidden (starts with .)
----@param name string
----@return boolean
-local function is_hidden(name)
-	return name:sub(1, 1) == "."
-end
-
----Scan directory and return items
----@param dir string Directory path
----@param opts table Options
----@return FileBrowserItem[]
-local function scan_directory(dir, opts)
-	local items = {}
-	local handle = uv.fs_scandir(dir)
-
-	if not handle then
-		return items
-	end
-
-	while true do
-		local name, type = uv.fs_scandir_next(handle)
-		if not name then
-			break
-		end
-
-		local path = dir .. "/" .. name
-		local hidden = is_hidden(name)
-
-		-- Skip hidden files if not configured to show them
-		if not opts.hidden and hidden then
-			goto continue
-		end
-
-		local stat = uv.fs_stat(path)
-		if stat then
-			table.insert(items, {
-				file = path,
-				text = name,
-				dir = type == "directory",
-				hidden = hidden,
-				size = stat.size or 0,
-				mtime = stat.mtime.sec or 0,
-				type = type or "file",
-			})
-		end
-
-		::continue::
-	end
-
-	-- Sort items: directories first, then files, alphabetically
-	table.sort(items, function(a, b)
-		if a.dir and not b.dir then
-			return true
-		elseif not a.dir and b.dir then
-			return false
-		else
-			return a.text:lower() < b.text:lower()
-		end
-	end)
-
-	return items
-end
-
----Safe dirname function that works in async context
----@param path string
----@return string
-local function safe_dirname(path)
-	if path == "/" then
-		return "/"
-	end
-	local parts = {}
-	for part in path:gmatch("[^/]+") do
-		table.insert(parts, part)
-	end
-	if #parts <= 1 then
-		return "/"
-	end
-	table.remove(parts) -- Remove last part
-	return "/" .. table.concat(parts, "/")
-end
-
 ---Create finder for directory browsing (current behavior)
 ---@param opts table
 ---@param ctx table
@@ -110,14 +21,14 @@ function M.create_directory_finder(opts, ctx)
 	return function(cb)
 		local cwd = ctx.picker:cwd()
 		local config = opts or {}
-		local items = scan_directory(cwd, config)
+		local items = util.scan_directory(cwd, config)
 
 		-- Add parent directory entry if not at root
 		-- Get home directory safely (expand ~ outside of async context)
 		local home_dir = (os.getenv("HOME") or "/home/") .. (os.getenv("USER") or "user")
 		if cwd ~= "/" and cwd ~= home_dir then
 			table.insert(items, 1, {
-				file = safe_dirname(cwd),
+				file = util.safe_dirname(cwd),
 				text = "../",
 				dir = true,
 				hidden = false,
@@ -154,33 +65,30 @@ function M.create_file_finder(opts, roots, ctx)
 		local item_count = 0
 		local batch_size = 100
 
-		local cancel_scan = scan_fn(
-			function(file_path)
-				-- Create file item
-				local basename = vim.fs.basename(file_path)
-				local stat = uv.fs_stat(file_path)
-				
-				cb({
-					file = file_path,
-					text = basename,
-					dir = false,
-					hidden = basename:sub(1, 1) == ".",
-					size = stat and stat.size or 0,
-					mtime = stat and stat.mtime and stat.mtime.sec or 0,
-					type = "file",
-				})
+		local cancel_scan = scan_fn(function(file_path)
+			-- Create file item
+			local basename = vim.fs.basename(file_path)
+			local stat = uv.fs_stat(file_path)
 
-				-- Batch updates for performance
-				item_count = item_count + 1
-				if item_count % batch_size == 0 then
-					-- Allow UI to update
-					vim.schedule(function() end)
-				end
-			end,
-			function()
-				-- Scan complete
+			cb({
+				file = file_path,
+				text = basename,
+				dir = false,
+				hidden = basename:sub(1, 1) == ".",
+				size = stat and stat.size or 0,
+				mtime = stat and stat.mtime and stat.mtime.sec or 0,
+				type = "file",
+			})
+
+			-- Batch updates for performance
+			item_count = item_count + 1
+			if item_count % batch_size == 0 then
+				-- Allow UI to update
+				vim.schedule(function() end)
 			end
-		)
+		end, function()
+			-- Scan complete
+		end)
 
 		-- Store cancel function on context for cleanup
 		if ctx and ctx.picker then
@@ -196,7 +104,7 @@ end
 function M.create_finder(opts, ctx)
 	-- Use file finder if we have multiple roots or fast discovery is enabled
 	local use_file_finder = opts.use_file_finder or (opts._roots and #opts._roots > 1)
-	
+
 	if use_file_finder and opts._roots then
 		return M.create_file_finder(opts, opts._roots, ctx)
 	else
@@ -256,7 +164,7 @@ local function navigate_to_directory(picker, path)
 	path = safe_normalize_path(path)
 
 	-- Ensure directory exists
-	if not is_directory(path) then
+	if not util.is_directory(path) then
 		vim.schedule(function()
 			vim.notify("Not a directory: " .. path, vim.log.levels.WARN)
 		end)
@@ -327,7 +235,7 @@ function M.goto_parent(picker)
 	current = current or uv.cwd()
 
 	if current ~= nil then
-		local parent = safe_dirname(current)
+		local parent = util.safe_dirname(current)
 
 		if parent and parent ~= current then
 			navigate_to_directory(picker, parent)
@@ -357,18 +265,18 @@ end
 function M.goto_project_root(picker)
 	-- Try to find git root
 	local current_dir = picker:cwd() or uv.cwd()
-	
+
 	-- Walk up the directory tree looking for .git
 	local function find_git_root(path)
 		while path and path ~= "/" do
 			if vim.fn.isdirectory(path .. "/.git") == 1 then
 				return path
 			end
-			path = safe_dirname(path)
+			path = util.safe_dirname(path)
 		end
 		return nil
 	end
-	
+
 	local git_root = find_git_root(current_dir)
 	if git_root then
 		navigate_to_directory(picker, git_root)
@@ -385,7 +293,7 @@ function M.goto_previous_dir(picker)
 	-- Simple implementation - could be enhanced with full history stack
 	local current_dir = picker:cwd()
 	if current_dir then
-		local parent = safe_dirname(current_dir)
+		local parent = util.safe_dirname(current_dir)
 		if parent and parent ~= current_dir then
 			navigate_to_directory(picker, parent)
 		end
