@@ -15,15 +15,17 @@ end
 ---@param args string[]
 ---@param on_line function(string)
 ---@param on_exit function(number)?
+---@param cwd string? working directory
 ---@return function cancel function
-local function spawn_streaming(cmd, args, on_line, on_exit)
+local function spawn_streaming(cmd, args, on_line, on_exit, cwd)
 	local stdout = uv.new_pipe(false)
 	local stderr = uv.new_pipe(false)
 	local handle
 
 	handle = uv.spawn(cmd, {
 		args = args,
-		stdio = { nil, stdout, stderr }
+		stdio = { nil, stdout, stderr },
+		cwd = cwd
 	}, function(code, _)
 		stdout:read_stop()
 		stderr:read_stop()
@@ -109,6 +111,7 @@ local function build_fd_scanner(opts, roots)
 
 			local cancel = spawn_streaming("fd", args, function(line)
 				if not finished then
+					-- fd outputs relative paths from the root, make them absolute
 					local full_path = vim.fs.joinpath(root, line)
 					on_item(full_path)
 				end
@@ -118,7 +121,7 @@ local function build_fd_scanner(opts, roots)
 					finished = true
 					on_done()
 				end
-			end)
+			end, root)
 
 			table.insert(cancelers, cancel)
 		end
@@ -156,11 +159,13 @@ local function build_rg_scanner(opts, roots)
 
 		for _, root in ipairs(roots) do
 			local args = vim.deepcopy(base_args)
-			table.insert(args, root)
+			table.insert(args, ".")
 
 			local cancel = spawn_streaming("rg", args, function(line)
 				if not finished then
-					on_item(line)
+					-- rg outputs relative paths from the root, make them absolute
+					local full_path = vim.fs.joinpath(root, line)
+					on_item(full_path)
 				end
 			end, function(code)
 				remaining = remaining - 1
@@ -168,7 +173,7 @@ local function build_rg_scanner(opts, roots)
 					finished = true
 					on_done()
 				end
-			end)
+			end, root)
 
 			table.insert(cancelers, cancel)
 		end

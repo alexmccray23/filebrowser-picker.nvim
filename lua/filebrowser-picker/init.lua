@@ -254,9 +254,9 @@ function M.file_browser(opts)
 	local roots = normalize_roots(opts)
 	local initial_cwd = roots[1]
 
-	-- Auto-detect file finder usage
+	-- Auto-detect file finder usage - default to directory browser for better navigation
 	if opts.use_file_finder == nil then
-		opts.use_file_finder = #roots > 1
+		opts.use_file_finder = false
 	end
 	
 	-- State management for root cycling - use table so it's mutable across closures
@@ -295,12 +295,14 @@ function M.file_browser(opts)
 			local current_idx = state.current_root_idx
 			local active_root = state.roots[current_idx]
 			
-			-- Use file finder if we have multiple roots or fast discovery is enabled
-			local use_file_finder = opts.use_file_finder or (opts._roots and #opts._roots > 1)
+			-- Debug output
+			print(string.format("FINDER: root_idx=%d, active_root=%s", current_idx, active_root))
+			
+			-- Use file finder only if explicitly enabled
+			local use_file_finder = opts.use_file_finder == true
 			
 			if use_file_finder and opts._roots then
-				-- File discovery mode - scan the currently active root
-				local items = {}
+				-- File discovery mode - scan synchronously but yield every 50 items
 				local scan_opts = {
 					hidden = opts.hidden,
 					follow_symlinks = opts.follow_symlinks,
@@ -312,9 +314,11 @@ function M.file_browser(opts)
 				
 				-- Scan only the active root (not all roots)
 				local scan_fn = scanner.build_scanner(scan_opts, {active_root})
+				local items = {}
+				local item_count = 0
 				local completed = false
 				
-				scan_fn(
+				local cancel_scan = scan_fn(
 					function(file_path)
 						-- Create file item
 						local basename = vim.fs.basename(file_path)
@@ -329,17 +333,28 @@ function M.file_browser(opts)
 							mtime = stat and stat.mtime and stat.mtime.sec or 0,
 							type = "file",
 						})
+						
+						-- Yield periodically to prevent blocking
+						item_count = item_count + 1
+						if item_count % 50 == 0 then
+							vim.schedule(function() end) -- Allow UI updates
+						end
 					end,
 					function()
 						completed = true
 					end
 				)
 				
-				-- Wait for completion (blocking, but necessary for sync finder)
-				local timeout = 5000 -- 5 second timeout
+				-- Wait for scan to complete, but yield control
 				local start_time = uv.hrtime()
+				local timeout = 10000 -- 10 second timeout
 				while not completed and (uv.hrtime() - start_time) / 1000000 < timeout do
-					uv.run("nowait")
+					vim.wait(1, function() return completed end, 1)
+				end
+				
+				-- Store cancel function for cleanup
+				if ctx and ctx.picker then
+					ctx.picker._cancel_scan = cancel_scan
 				end
 				
 				return items
@@ -376,9 +391,13 @@ function M.file_browser(opts)
 				end
 				
 				-- Update the mutable state
+				local old_idx = state.current_root_idx
 				state.current_root_idx = (state.current_root_idx % #state.roots) + 1
 				local new_root = state.roots[state.current_root_idx]
 				opts._current_root_idx = state.current_root_idx
+				
+				-- Debug output
+				print(string.format("CYCLE_ROOTS: %d -> %d, new_root=%s", old_idx, state.current_root_idx, new_root))
 				
 				-- For multiple roots, we don't change picker cwd since we're discovering across all roots
 				-- But for single directory mode, we do change cwd
@@ -388,7 +407,10 @@ function M.file_browser(opts)
 				
 				picker.title = get_title(state.current_root_idx, new_root)
 				picker:update_titles()
+				
+				print("About to call picker:find({ refresh = true })")
 				picker:find({ refresh = true })
+				print("Called picker:find({ refresh = true })")
 			end,
 		}),
 		layout = opts.dynamic_layout and {
