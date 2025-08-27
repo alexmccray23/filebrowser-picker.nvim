@@ -54,6 +54,7 @@ M.config = {
 		["-"] = "goto_previous_dir",
 		["="] = "goto_project_root",
 		["<C-t>"] = "set_pwd",
+		["<A-h>"] = "toggle_hidden",
 		["<A-c>"] = "create_file",
 		["<A-r>"] = "rename",
 		["<A-m>"] = "move",
@@ -97,7 +98,7 @@ function M.file_browser(opts)
 
 	-- Create root management actions
 	local root_actions = roots.create_actions(state, finder.ui_select)
-	
+
 	-- Create navigation actions that need state access
 	local navigation_actions = {
 		goto_parent = function(picker)
@@ -118,23 +119,24 @@ function M.file_browser(opts)
 	}
 
 	local initial_cwd = active_root()
-	
+
+	-- Store opts on the picker for toggle_hidden to access
 	local picker_opts = {
 		cwd = initial_cwd,
 		title = roots.title_for(state.idx, state.roots, initial_cwd),
-		
+
 		finder = finder.create_finder(opts, state),
 		format = finder.create_format_function(opts),
-		
+
 		actions = vim.tbl_extend("force", actions.get_actions(), root_actions, navigation_actions),
-		
+
 		layout = opts.dynamic_layout and {
 			cycle = true,
 			preset = function()
 				return vim.o.columns >= (opts.layout_width_threshold or 120) and "default" or "vertical"
 			end,
 		} or { preset = "default" },
-		
+
 		win = {
 			input = {
 				keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
@@ -155,7 +157,7 @@ function M.file_browser(opts)
 				})),
 			},
 		},
-		
+
 		on_close = finder.create_cleanup_function(),
 	}
 

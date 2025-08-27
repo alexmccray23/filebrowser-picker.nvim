@@ -59,17 +59,17 @@ function M.discover_roots()
 			seen[p] = true
 		end
 	end
-	
+
 	-- Add common root candidates
 	add(vim.fn.getcwd())
 	add(vim.loop.os_homedir())
-	
+
 	-- Find git root
 	local gitdir = vim.fs.find(".git", { upward = true, stop = vim.loop.os_homedir() })[1]
 	if gitdir then
 		add(vim.fs.dirname(gitdir))
 	end
-	
+
 	-- LSP workspace folders
 	for _, client in pairs(vim.lsp.get_clients({ bufnr = 0 })) do
 		if client.workspace_folders then
@@ -81,7 +81,7 @@ function M.discover_roots()
 			add(client.config.root_dir)
 		end
 	end
-	
+
 	return out
 end
 
@@ -93,7 +93,7 @@ function M.create_actions(state, ui_select)
 	local function active_root()
 		return state.roots[state.idx]
 	end
-	
+
 	local function update_picker_root(picker, new_root, new_idx)
 		if new_idx then
 			state.idx = new_idx
@@ -113,7 +113,7 @@ function M.create_actions(state, ui_select)
 			local new_idx = (state.idx % #state.roots) + 1
 			update_picker_root(picker, state.roots[new_idx], new_idx)
 		end,
-		
+
 		cycle_roots_prev = function(picker)
 			if #state.roots < 2 then
 				return
@@ -121,7 +121,7 @@ function M.create_actions(state, ui_select)
 			local new_idx = ((state.idx - 2) % #state.roots) + 1
 			update_picker_root(picker, state.roots[new_idx], new_idx)
 		end,
-		
+
 		root_add_here = function(picker)
 			local here = picker:cwd()
 			-- Check for duplicates
@@ -135,7 +135,7 @@ function M.create_actions(state, ui_select)
 			table.insert(state.roots, state.idx + 1, here)
 			update_picker_root(picker, here, state.idx + 1)
 		end,
-		
+
 		root_add_path = function(picker)
 			local path = vim.fn.input("Add root path: ", picker:cwd(), "file")
 			if path == nil or path == "" then
@@ -149,7 +149,7 @@ function M.create_actions(state, ui_select)
 			table.insert(state.roots, state.idx + 1, path)
 			update_picker_root(picker, path, state.idx + 1)
 		end,
-		
+
 		root_pick_suggested = function(picker)
 			local candidates = M.discover_roots()
 			ui_select(candidates, "Add workspace root", function(choice)
@@ -160,7 +160,7 @@ function M.create_actions(state, ui_select)
 				update_picker_root(picker, choice, state.idx + 1)
 			end)
 		end,
-		
+
 		root_remove = function(picker)
 			if #state.roots <= 1 then
 				vim.notify("Cannot remove the last root", vim.log.levels.WARN)

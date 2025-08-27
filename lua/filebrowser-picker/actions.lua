@@ -316,14 +316,6 @@ function M.change_directory(picker, item)
 	navigate_to_directory(picker, target_dir)
 end
 
----Action: Toggle hidden files visibility
----@param picker any
-function M.toggle_hidden(picker)
-	-- This would need to be implemented by modifying the finder
-	-- For now, just refresh
-	picker:find({ refresh = true })
-end
-
 ---Action: Create new file/directory
 ---@param picker any
 function M.create_file(picker)
@@ -384,7 +376,7 @@ function M.move(picker, item)
 	if #selected_items == 0 and item then
 		selected_items = { item }
 	end
-	
+
 	if #selected_items == 0 then
 		vim.notify("No files selected to move", vim.log.levels.WARN)
 		return
@@ -395,7 +387,7 @@ function M.move(picker, item)
 		local target_dir = picker:cwd()
 		local what = #selected_items .. " files"
 		local target_display = vim.fn.fnamemodify(target_dir, ":~:.")
-		
+
 		-- Confirm multi-file move
 		vim.ui.select({ "No", "Yes" }, {
 			prompt = "Move " .. what .. " to " .. target_display .. "?",
@@ -403,16 +395,16 @@ function M.move(picker, item)
 			if idx ~= 2 then
 				return
 			end
-			
+
 			local moved_count = 0
 			local errors = {}
-			
+
 			-- Move each file
 			for _, itm in ipairs(selected_items) do
 				local from = itm.file
 				local name = vim.fn.fnamemodify(from, ":t")
 				local to = target_dir .. "/" .. name
-				
+
 				-- Check if destination already exists
 				if vim.fn.filereadable(to) == 1 or vim.fn.isdirectory(to) == 1 then
 					table.insert(errors, "Destination exists: " .. name)
@@ -429,7 +421,7 @@ function M.move(picker, item)
 							end
 						end
 					end)
-					
+
 					if ok then
 						moved_count = moved_count + 1
 					else
@@ -437,11 +429,11 @@ function M.move(picker, item)
 					end
 				end
 			end
-			
+
 			-- Clear selection and refresh
 			picker.list:set_selected()
 			picker:find({ refresh = true })
-			
+
 			-- Report results
 			if moved_count > 0 then
 				vim.notify("Moved " .. moved_count .. " files")
@@ -479,7 +471,7 @@ function M.move(picker, item)
 					end
 				end
 			end)
-			
+
 			if ok then
 				vim.notify("Moved: " .. single_item.text .. " -> " .. vim.fn.fnamemodify(dest_path, ":t"))
 				picker:find({ refresh = true })
@@ -489,7 +481,6 @@ function M.move(picker, item)
 		end)
 	end
 end
-
 
 ---Action: Yank (copy to register) selected files
 ---@param picker any
@@ -502,18 +493,20 @@ function M.yank(picker)
 			selected_items = { current }
 		end
 	end
-	
+
 	if #selected_items == 0 then
 		vim.notify("No files to yank", vim.log.levels.WARN)
 		return
 	end
-	
-	local paths = vim.tbl_map(function(itm) return itm.file end, selected_items)
+
+	local paths = vim.tbl_map(function(itm)
+		return itm.file
+	end, selected_items)
 	local value = table.concat(paths, "\n")
-	
+
 	-- Store in default register and clipboard
 	vim.fn.setreg(vim.v.register or "+", value, "l")
-	
+
 	-- Clear selection and notify
 	picker.list:set_selected()
 	vim.notify("Yanked " .. #selected_items .. " files")
@@ -535,14 +528,14 @@ function M.paste(picker)
 	local target_dir = picker:cwd()
 	local what = #files == 1 and vim.fn.fnamemodify(files[1], ":t") or #files .. " files"
 	local target_display = vim.fn.fnamemodify(target_dir, ":~:.")
-	
+
 	vim.ui.select({ "No", "Yes" }, {
 		prompt = "Paste " .. what .. " to " .. target_display .. "?",
 	}, function(_, idx)
 		if idx ~= 2 then
 			return
 		end
-		
+
 		-- Use Snacks utility for reliable copying
 		local ok, err = pcall(function()
 			local Snacks = require("snacks")
@@ -557,7 +550,7 @@ function M.paste(picker)
 				end
 			end
 		end)
-		
+
 		if ok then
 			vim.notify("Pasted " .. #files .. " files")
 			picker:find({ refresh = true })
@@ -707,7 +700,6 @@ function M.get_actions()
 		goto_project_root = M.goto_project_root,
 		goto_previous_dir = M.goto_previous_dir,
 		change_directory = M.change_directory,
-		toggle_hidden = M.toggle_hidden,
 		create_file = M.create_file,
 		rename = M.rename,
 		move = M.move,

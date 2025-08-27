@@ -90,7 +90,7 @@ end
 ---@return table[] Directory items
 function M.read_directory(cwd, opts)
 	local items = util.scan_directory(cwd, opts)
-	
+
 	-- Add "../" entry unless at filesystem root
 	local parent = util.safe_dirname(cwd)
 	if parent and parent ~= cwd then
@@ -104,7 +104,7 @@ function M.read_directory(cwd, opts)
 			type = "directory",
 		})
 	end
-	
+
 	return items
 end
 
@@ -114,9 +114,12 @@ end
 ---@return function Finder function
 function M.create_finder(opts, state)
 	return function(_, ctx)
+		-- Use picker.opts if available (for toggle functionality), fallback to original opts
+		local current_opts = (ctx and ctx.picker and ctx.picker.opts) or opts
+
 		-- Always rebuild scanner on (re)invoke so it follows state changes
 		if opts.use_file_finder then
-			local list, cancel = M.start_scanner(opts, state, ctx)
+			local list, cancel = M.start_scanner(current_opts, state, ctx)
 			if ctx and ctx.picker then
 				-- Ensure previous scan is cancelled on re-find or close
 				if ctx.picker._fbp_cancel_scan and ctx.picker._fbp_cancel_scan ~= cancel then
@@ -127,7 +130,7 @@ function M.create_finder(opts, state)
 			return list or {}
 		else
 			local cwd = (ctx and ctx.picker and ctx.picker:cwd()) or state.roots[state.idx]
-			return M.read_directory(cwd, opts)
+			return M.read_directory(cwd, current_opts)
 		end
 	end
 end
