@@ -644,11 +644,53 @@ function M.set_pwd(picker)
 	end
 end
 
----Action: Cycle through multiple roots
+---Navigation actions that need state access will be injected from init.lua
+---These are placeholders that get replaced with actual implementations
+
+---Action: Go to parent directory with previous directory tracking
 ---@param picker any
+---@param state table Multi-root state for previous directory tracking
+function M.goto_parent_with_state(picker, state)
+	local current = picker:cwd()
+	local parent = util.safe_dirname(current)
+	if parent and parent ~= current then
+		state.prev_dir = current
+		picker:set_cwd(parent)
+		-- Title updates handled by caller
+		picker:find({ refresh = true })
+	end
+end
+
+---Action: Go to previous directory
+---@param picker any
+---@param state table Multi-root state containing prev_dir
+function M.goto_previous_dir_with_state(picker, state)
+	if state.prev_dir and state.prev_dir ~= picker:cwd() then
+		local tmp = picker:cwd()
+		picker:set_cwd(state.prev_dir)
+		state.prev_dir = tmp
+		-- Title updates handled by caller
+		picker:find({ refresh = true })
+	end
+end
+
+---Action: Go to project root (git root)
+---@param picker any
+---@param state table Multi-root state for previous directory tracking
+function M.goto_project_root_with_state(picker, state)
+	local current = picker:cwd()
+	local git_root = util.get_git_root(current) or current
+	if git_root ~= current then
+		state.prev_dir = current
+		picker:set_cwd(git_root)
+		-- Title updates handled by caller
+		picker:find({ refresh = true })
+	end
+end
+
+---Placeholder for cycle_roots - replaced by roots module
 function M.cycle_roots(picker)
-	-- This will be implemented by the picker configuration
-	-- The actual implementation is in init.lua where roots are managed
+	-- Implemented by roots module in init.lua
 end
 
 ---Get all actions for picker configuration
