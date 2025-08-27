@@ -123,15 +123,19 @@ require("filebrowser-picker").setup({
 | `=` | goto_project_root | Go to git project root |
 | `<C-t>` | set_pwd | Sets current working directory |
 
-### Multi-Root Management
+### Multi-Root Management & List Navigation
 | Key | Action | Description |
 |-----|--------|-------------|
-| `<C-n>` | cycle_roots | Cycle to next root directory |
-| `<C-p>` | cycle_roots_prev | Cycle to previous root directory |
+| `<C-n>` | cycle_roots / list_down | Cycle to next root (multi-root) or move down list (single root) |
+| `<C-p>` | cycle_roots_prev / list_up | Cycle to previous root (multi-root) or move up list (single root) |
 | `gr` | root_add_here | Add current directory as root |
 | `gR` | root_add_path | Add custom path as root |
 | `<leader>wr` | root_pick_suggested | Pick from suggested workspace roots |
 | `<leader>wR` | root_remove | Remove current root |
+
+**Smart Navigation**: `<C-n>` and `<C-p>` adapt their behavior dynamically:
+- **Multiple roots**: Navigate between different root directories
+- **Single root**: Navigate up/down the file list (standard picker navigation)
 
 ### File Operations
 | Key | Action | Description |

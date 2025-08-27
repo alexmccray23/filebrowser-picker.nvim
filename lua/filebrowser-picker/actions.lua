@@ -121,7 +121,7 @@ function M.format_item(item, opts)
 	local text_hl = "Normal"
 
 	if item.dir then
-    icon, icon_hl = util.icon(item.text, "directory", { fallback = { file = opts.icons.folder_closed } })
+		icon, icon_hl = util.icon(item.text, "directory", { fallback = { file = opts.icons.folder_closed } })
 		text_hl = "Directory" -- Keep directory name highlighted
 	elseif item.type == "link" then
 		icon = opts.icons.symlink

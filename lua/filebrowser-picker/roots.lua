@@ -107,7 +107,8 @@ function M.create_actions(state, ui_select)
 	return {
 		cycle_roots = function(picker)
 			if #state.roots < 2 then
-				vim.notify("Only one root configured", vim.log.levels.INFO)
+				-- Fallback to list navigation when only one root
+				picker:action("list_down")
 				return
 			end
 			local new_idx = (state.idx % #state.roots) + 1
@@ -116,6 +117,8 @@ function M.create_actions(state, ui_select)
 
 		cycle_roots_prev = function(picker)
 			if #state.roots < 2 then
+				-- Fallback to list navigation when only one root
+				picker:action("list_up")
 				return
 			end
 			local new_idx = ((state.idx - 2) % #state.roots) + 1
