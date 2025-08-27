@@ -375,57 +375,194 @@ function M.rename(picker, item)
 	})
 end
 
----Action: Move selected file
+---Action: Move selected file(s) - supports multi-file selection
 ---@param picker any
 ---@param item? FileBrowserItem
 function M.move(picker, item)
-	if not item then
+	-- Get selected files, fallback to current item if no selection
+	local selected_items = picker:selected()
+	if #selected_items == 0 and item then
+		selected_items = { item }
+	end
+	
+	if #selected_items == 0 then
+		vim.notify("No files selected to move", vim.log.levels.WARN)
 		return
 	end
 
-	vim.ui.input({
-		prompt = "Move to: ",
-		default = picker:cwd() .. "/",
-	}, function(dest_path)
-		if not dest_path or dest_path == "" then
-			return
-		end
-
-		local ok, err = os.rename(item.file, dest_path)
-		if ok then
-			vim.notify("Moved: " .. item.text .. " -> " .. dest_path)
+	-- If we have multiple files, move them all to current directory
+	if #selected_items > 1 then
+		local target_dir = picker:cwd()
+		local what = #selected_items .. " files"
+		local target_display = vim.fn.fnamemodify(target_dir, ":~:.")
+		
+		-- Confirm multi-file move
+		vim.ui.select({ "No", "Yes" }, {
+			prompt = "Move " .. what .. " to " .. target_display .. "?",
+		}, function(_, idx)
+			if idx ~= 2 then
+				return
+			end
+			
+			local moved_count = 0
+			local errors = {}
+			
+			-- Move each file
+			for _, itm in ipairs(selected_items) do
+				local from = itm.file
+				local name = vim.fn.fnamemodify(from, ":t")
+				local to = target_dir .. "/" .. name
+				
+				-- Check if destination already exists
+				if vim.fn.filereadable(to) == 1 or vim.fn.isdirectory(to) == 1 then
+					table.insert(errors, "Destination exists: " .. name)
+				else
+					-- Use Snacks rename if available, fallback to os.rename
+					local ok, err = pcall(function()
+						local Snacks = require("snacks")
+						if Snacks.rename and Snacks.rename.rename_file then
+							Snacks.rename.rename_file({ from = from, to = to })
+						else
+							local success = os.rename(from, to)
+							if not success then
+								error("Move failed")
+							end
+						end
+					end)
+					
+					if ok then
+						moved_count = moved_count + 1
+					else
+						table.insert(errors, name .. ": " .. (err or "unknown error"))
+					end
+				end
+			end
+			
+			-- Clear selection and refresh
+			picker.list:set_selected()
 			picker:find({ refresh = true })
-		else
-			vim.notify("Failed to move: " .. (err or "unknown error"), vim.log.levels.ERROR)
-		end
-	end)
+			
+			-- Report results
+			if moved_count > 0 then
+				vim.notify("Moved " .. moved_count .. " files")
+			end
+			if #errors > 0 then
+				vim.notify("Some moves failed:\n" .. table.concat(errors, "\n"), vim.log.levels.ERROR)
+			end
+		end)
+	else
+		-- Single file move - use input for custom destination
+		local single_item = selected_items[1]
+		vim.ui.input({
+			prompt = "Move to: ",
+			default = picker:cwd() .. "/" .. single_item.text,
+		}, function(dest_path)
+			if not dest_path or dest_path == "" then
+				return
+			end
+
+			-- Check if destination already exists
+			if vim.fn.filereadable(dest_path) == 1 or vim.fn.isdirectory(dest_path) == 1 then
+				vim.notify("Destination already exists: " .. dest_path, vim.log.levels.ERROR)
+				return
+			end
+
+			-- Use Snacks rename if available, fallback to os.rename
+			local ok, err = pcall(function()
+				local Snacks = require("snacks")
+				if Snacks.rename and Snacks.rename.rename_file then
+					Snacks.rename.rename_file({ from = single_item.file, to = dest_path })
+				else
+					local success = os.rename(single_item.file, dest_path)
+					if not success then
+						error("Move failed")
+					end
+				end
+			end)
+			
+			if ok then
+				vim.notify("Moved: " .. single_item.text .. " -> " .. vim.fn.fnamemodify(dest_path, ":t"))
+				picker:find({ refresh = true })
+			else
+				vim.notify("Failed to move: " .. (err or "unknown error"), vim.log.levels.ERROR)
+			end
+		end)
+	end
 end
 
----Action: Copy selected file
+
+---Action: Yank (copy to register) selected files
 ---@param picker any
----@param item? FileBrowserItem
-function M.copy(picker, item)
-	if not item then
+function M.yank(picker)
+	local selected_items = picker:selected()
+	if #selected_items == 0 then
+		-- If nothing selected, yank current item
+		local current = picker:current()
+		if current then
+			selected_items = { current }
+		end
+	end
+	
+	if #selected_items == 0 then
+		vim.notify("No files to yank", vim.log.levels.WARN)
+		return
+	end
+	
+	local paths = vim.tbl_map(function(itm) return itm.file end, selected_items)
+	local value = table.concat(paths, "\n")
+	
+	-- Store in default register and clipboard
+	vim.fn.setreg(vim.v.register or "+", value, "l")
+	
+	-- Clear selection and notify
+	picker.list:set_selected()
+	vim.notify("Yanked " .. #selected_items .. " files")
+end
+
+---Action: Paste files from register to current directory
+---@param picker any
+function M.paste(picker)
+	local files = vim.split(vim.fn.getreg(vim.v.register or "+") or "", "\n", { plain = true })
+	files = vim.tbl_filter(function(file)
+		return file ~= "" and (vim.fn.filereadable(file) == 1 or vim.fn.isdirectory(file) == 1)
+	end, files)
+
+	if #files == 0 then
+		vim.notify("No files in register to paste", vim.log.levels.WARN)
 		return
 	end
 
-	vim.ui.input({
-		prompt = "Copy to: ",
-		default = picker:cwd() .. "/" .. item.text,
-	}, function(dest_path)
-		if not dest_path or dest_path == "" then
+	local target_dir = picker:cwd()
+	local what = #files == 1 and vim.fn.fnamemodify(files[1], ":t") or #files .. " files"
+	local target_display = vim.fn.fnamemodify(target_dir, ":~:.")
+	
+	vim.ui.select({ "No", "Yes" }, {
+		prompt = "Paste " .. what .. " to " .. target_display .. "?",
+	}, function(_, idx)
+		if idx ~= 2 then
 			return
 		end
-
-		-- Simple file copy (doesn't handle directories recursively)
-		local cmd = string.format("cp %s %s", vim.fn.shellescape(item.file), vim.fn.shellescape(dest_path))
-
-		local result = vim.fn.system(cmd)
-		if vim.v.shell_error == 0 then
-			vim.notify("Copied: " .. item.text .. " -> " .. dest_path)
+		
+		-- Use Snacks utility for reliable copying
+		local ok, err = pcall(function()
+			local Snacks = require("snacks")
+			if Snacks.picker and Snacks.picker.util and Snacks.picker.util.copy then
+				Snacks.picker.util.copy(files, target_dir)
+			else
+				-- Fallback to manual copy
+				for _, path in ipairs(files) do
+					local name = vim.fn.fnamemodify(path, ":t")
+					local dest = target_dir .. "/" .. name
+					M._copy_path(path, dest)
+				end
+			end
+		end)
+		
+		if ok then
+			vim.notify("Pasted " .. #files .. " files")
 			picker:find({ refresh = true })
 		else
-			vim.notify("Failed to copy: " .. result, vim.log.levels.ERROR)
+			vim.notify("Failed to paste files: " .. (err or "unknown error"), vim.log.levels.ERROR)
 		end
 	end)
 end
@@ -532,7 +669,8 @@ function M.get_actions()
 		create_file = M.create_file,
 		rename = M.rename,
 		move = M.move,
-		copy = M.copy,
+		yank = M.yank,
+		paste = M.paste,
 		delete = M.delete,
 		edit_vsplit = M.edit_vsplit,
 		edit_split = M.edit_split,

@@ -57,7 +57,8 @@ M.config = {
 		["<A-c>"] = "create_file",
 		["<A-r>"] = "rename",
 		["<A-m>"] = "move",
-		["<A-y>"] = "copy",
+		["<A-y>"] = "yank",
+		["<A-p>"] = "paste",
 		["<A-d>"] = "delete",
 	},
 }

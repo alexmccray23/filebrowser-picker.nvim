@@ -8,7 +8,7 @@ A file browser for Neovim using snacks.nvim's picker, providing telescope-file-b
 - 📁 **Persistent directory navigation** like telescope-file-browser
 - 🌳 **Multi-root support** with dynamic workspace management
 - ⚡ **High-performance file discovery** using fd, ripgrep, or fallback scanning
-- 📝 **File operations**: create, rename, move, copy, delete
+- 📝 **File operations**: create, rename, move, copy, delete with multi-file selection support
 - 👁️ **Hidden files toggle**
 - 🔄 **Root cycling** and smart workspace discovery
 
@@ -139,9 +139,12 @@ require("filebrowser-picker").setup({
 | `<A-h>` | toggle_hidden | Toggle hidden files |
 | `<A-c>` | create_file | Create new file/directory |
 | `<A-r>` | rename | Rename selected item |
-| `<A-m>` | move | Move selected item |
-| `<A-y>` | copy | Copy selected item |
+| `<A-m>` | move | Move selected item(s) |
+| `<A-y>` | yank | Yank (copy to register) selected items |
+| `<A-p>` | paste | Paste files from register |
 | `<A-d>` | delete | Delete selected item |
+
+**Multi-file Operations**: Use visual selection or `<Tab>` to select multiple files, then use move/yank/paste/delete operations on the entire selection.
 
 
 ## Configuration
