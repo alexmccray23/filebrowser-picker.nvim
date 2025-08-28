@@ -571,33 +571,64 @@ function M.paste(picker)
 	end)
 end
 
----Action: Delete selected file
+---Action: Delete selected file(s) - supports multi-file selection
 ---@param picker any
 ---@param item? FileBrowserItem
 function M.delete(picker, item)
-	if not item then
+	-- Get selected files, fallback to current item if no selection
+	local selected_items = picker:selected()
+	if #selected_items == 0 and item then
+		selected_items = { item }
+	end
+
+	if #selected_items == 0 then
+		vim.notify("No files selected to delete", vim.log.levels.WARN)
 		return
 	end
 
+	-- Build confirmation prompt
+	local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
+
 	vim.ui.select({ "No", "Yes" }, {
-		prompt = "Delete " .. item.text .. "?",
+		prompt = "Delete " .. what .. "?",
 	}, function(_, idx)
 		if idx ~= 2 then
 			return
 		end
 
-		local ok, err
-		if item.dir then
-			ok, err = os.remove(item.file)
-		else
-			ok, err = os.remove(item.file)
+		local deleted_count = 0
+		local errors = {}
+
+		-- Delete each file
+		for _, itm in ipairs(selected_items) do
+			local ok, err
+			if itm.dir then
+				-- For directories, os.remove only works on empty directories
+				ok, err = os.remove(itm.file)
+			else
+				-- For files
+				ok, err = os.remove(itm.file)
+			end
+
+			if ok then
+				deleted_count = deleted_count + 1
+			else
+				table.insert(errors, itm.text .. ": " .. (err or "unknown error"))
+			end
 		end
 
-		if ok then
-			vim.notify("Deleted: " .. item.text)
-			picker:find({ refresh = true })
-		else
-			vim.notify("Failed to delete: " .. (err or "unknown error"), vim.log.levels.ERROR)
+		-- Clear selection and refresh
+		picker.list:set_selected()
+		picker:find({ refresh = true })
+
+		-- Report results
+		if deleted_count > 0 then
+			local message = deleted_count == 1 and "Deleted: " .. selected_items[1].text
+				or "Deleted " .. deleted_count .. " files"
+			vim.notify(message)
+		end
+		if #errors > 0 then
+			vim.notify("Some deletions failed:\n" .. table.concat(errors, "\n"), vim.log.levels.ERROR)
 		end
 	end)
 end
