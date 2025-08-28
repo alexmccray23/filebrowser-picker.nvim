@@ -166,10 +166,23 @@ function M.file_browser(opts)
 	-- Create root management actions
 	local root_actions = roots.create_actions(state, finder.ui_select)
 
-	-- Create navigation actions that need state access
-	local navigation_actions = {
+	-- Create actions that need state access
+	local state_aware_actions = {
+		confirm = function(picker, item)
+			actions.confirm_with_state(picker, item, state)
+		end,
 		goto_parent = function(picker)
 			actions.goto_parent_with_state(picker, state)
+			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
+			picker:update_titles()
+		end,
+		goto_home = function(picker)
+			actions.goto_home_with_state(picker, state)
+			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
+			picker:update_titles()
+		end,
+		goto_cwd = function(picker)
+			actions.goto_cwd_with_state(picker, state)
 			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
 			picker:update_titles()
 		end,
@@ -196,7 +209,7 @@ function M.file_browser(opts)
 		finder = finder.create_finder(opts, state),
 		format = finder.create_format_function(opts),
 
-		actions = vim.tbl_extend("force", actions.get_actions(), root_actions, navigation_actions),
+		actions = vim.tbl_extend("force", actions.get_actions(), root_actions, state_aware_actions),
 
 		layout = opts.dynamic_layout and {
 			cycle = true,

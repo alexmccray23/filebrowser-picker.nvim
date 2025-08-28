@@ -156,10 +156,17 @@ local function safe_normalize_path(path)
 	return path
 end
 
----Navigate to a new directory
+---Navigate to a new directory with state management
 ---@param picker any
 ---@param path string
-local function navigate_to_directory(picker, path)
+---@param state? table Optional state object for previous directory tracking
+---@param update_title? boolean Whether to update title (default: true)
+local function navigate_to_directory(picker, path, state, update_title)
+	-- Default update_title to true for backward compatibility
+	if update_title == nil then
+		update_title = true
+	end
+
 	-- Normalize the path safely
 	path = safe_normalize_path(path)
 
@@ -168,15 +175,22 @@ local function navigate_to_directory(picker, path)
 		vim.schedule(function()
 			notify.warn("Not a directory: " .. path)
 		end)
-		return
+		return false
+	end
+
+	-- Update previous directory state before navigation
+	if state then
+		state.prev_dir = picker:cwd()
 	end
 
 	-- Change picker's working directory (following snacks explorer pattern)
 	picker:set_cwd(path)
 
-	-- Update the picker title to show current path
-	picker.title = path
-	picker:update_titles()
+	-- Update the picker title if requested (let caller handle complex titles)
+	if update_title then
+		picker.title = path
+		picker:update_titles()
+	end
 
 	-- Clear any search pattern to show directory contents
 	picker.input:set("", "")
@@ -188,6 +202,8 @@ local function navigate_to_directory(picker, path)
 			picker.list:view(1)
 		end,
 	})
+	
+	return true
 end
 
 ---Action: Confirm/Open selected item
@@ -211,8 +227,39 @@ function M.confirm(picker, item)
 	end
 
 	if is_directory then
-		-- Navigate to directory
+		-- Navigate to directory (without state management for backward compatibility)
 		navigate_to_directory(picker, item.file)
+	else
+		-- Open file and close picker
+		picker:close()
+		vim.cmd("edit " .. vim.fn.fnameescape(item.file))
+	end
+end
+
+---Action: Confirm/Open selected item with state management
+---@param picker any
+---@param item FileBrowserItem
+---@param state table Multi-root state for previous directory tracking
+function M.confirm_with_state(picker, item, state)
+	if not item then
+		return
+	end
+
+	-- Check if this should be treated as a directory
+	local is_directory = item.dir
+
+	-- For symlinks, also check if they point to directories (when follow_symlinks is enabled)
+	if not is_directory and item.type == "link" then
+		local picker_opts = (picker and picker.opts) or {}
+		if picker_opts.follow_symlinks then
+			local stat = uv.fs_stat(item.file)
+			is_directory = stat and stat.type == "directory"
+		end
+	end
+
+	if is_directory then
+		-- Navigate to directory with state management
+		navigate_to_directory(picker, item.file, state)
 	else
 		-- Open file and close picker
 		picker:close()
@@ -262,6 +309,14 @@ function M.goto_home(picker)
 	navigate_to_directory(picker, home_dir)
 end
 
+---Action: Go to home directory with state management
+---@param picker any
+---@param state table Multi-root state for previous directory tracking
+function M.goto_home_with_state(picker, state)
+	local home_dir = os.getenv("HOME") or ("/home/" .. (os.getenv("USER") or "user"))
+	navigate_to_directory(picker, home_dir, state, false) -- Let caller handle title updates
+end
+
 ---Action: Go to current working directory
 ---@param picker any
 function M.goto_cwd(picker)
@@ -269,6 +324,17 @@ function M.goto_cwd(picker)
 	local cwd = uv.cwd()
 	if cwd ~= nil then
 		navigate_to_directory(picker, cwd)
+	end
+end
+
+---Action: Go to current working directory with state management
+---@param picker any
+---@param state table Multi-root state for previous directory tracking
+function M.goto_cwd_with_state(picker, state)
+	-- Use libuv to get cwd safely in async context
+	local cwd = uv.cwd()
+	if cwd ~= nil then
+		navigate_to_directory(picker, cwd, state, false) -- Let caller handle title updates
 	end
 end
 
@@ -802,9 +868,9 @@ function M.delete(picker, item)
 			elseif idx == 3 then
 				-- Strong confirmation for recursive deletion
 				vim.ui.input({
-					prompt = "Type 'DELETE' to confirm recursive deletion: ",
+					prompt = "Type 'Delete' to confirm recursive deletion: ",
 				}, function(input)
-					if input == "DELETE" then
+					if input == "Delete" then
 						perform_deletion(true)
 					else
 						notify.cancelled("deletion")
@@ -882,10 +948,7 @@ function M.goto_parent_with_state(picker, state)
 	local current = picker:cwd()
 	local parent = util.safe_dirname(current)
 	if parent and parent ~= current then
-		state.prev_dir = current
-		picker:set_cwd(parent)
-		-- Title updates handled by caller
-		picker:find({ refresh = true })
+		navigate_to_directory(picker, parent, state, false) -- Let caller handle title updates
 	end
 end
 
@@ -909,10 +972,7 @@ function M.goto_project_root_with_state(picker, state)
 	local current = picker:cwd()
 	local git_root = util.get_git_root(current) or current
 	if git_root ~= current then
-		state.prev_dir = current
-		picker:set_cwd(git_root)
-		-- Title updates handled by caller
-		picker:find({ refresh = true })
+		navigate_to_directory(picker, git_root, state, false) -- Let caller handle title updates
 	end
 end
 
