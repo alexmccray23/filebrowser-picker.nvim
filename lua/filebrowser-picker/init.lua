@@ -24,6 +24,7 @@ local finder = require("filebrowser-picker.finder")
 ---@field keymaps? table<string, string> Key mappings
 ---@field dynamic_layout? boolean Use dynamic layout switching based on window width (default: true)
 ---@field layout_width_threshold? number Minimum width for default layout, switches to vertical below this (default: 120)
+---@field replace_netrw? boolean Replace netrw with the file browser (default: false)
 
 ---@type FileBrowserPicker.Config
 M.config = {
@@ -39,6 +40,7 @@ M.config = {
 	excludes = {},
 	dynamic_layout = true,
 	layout_width_threshold = 120,
+	replace_netrw = false,
 	icons = util.get_default_icons(),
 	keymaps = {
 		["<CR>"] = "confirm",
@@ -71,6 +73,71 @@ M.actions = actions
 ---@param opts? FileBrowserPicker.Config
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+	-- Replace netrw with file browser if requested
+	if M.config.replace_netrw then
+		M.setup_netrw_replacement()
+	end
+end
+
+---Setup netrw replacement functionality
+function M.setup_netrw_replacement()
+	-- Disable netrw completely (must be done early)
+	vim.g.loaded_netrw = 1
+	vim.g.loaded_netrwPlugin = 1
+	vim.g.netrw_nogx = 1 -- disable netrw's gx mapping
+	vim.g.netrw_altv = 1 -- disable alternative view
+	vim.g.netrw_banner = 0 -- disable banner
+
+	-- Remove existing netrw FileExplorer autocmd group
+	pcall(vim.api.nvim_del_augroup_by_name, "FileExplorer")
+
+	-- Also try to remove other potential netrw autocmds
+	pcall(vim.api.nvim_del_augroup_by_name, "Network")
+	pcall(vim.api.nvim_del_augroup_by_name, "NetworkReadFixup")
+
+	local group = vim.api.nvim_create_augroup("filebrowser-picker.netrw", { clear = true })
+
+	local function handle_directory_buffer(ev)
+		if ev.file ~= "" and vim.fn.isdirectory(ev.file) == 1 then
+			-- Open file browser with the directory - don't schedule, handle directly
+			M.file_browser({
+				cwd = ev.file,
+				follow_symlinks = M.config.follow_symlinks,
+			})
+
+			if vim.v.vim_did_enter == 0 then
+				-- Before vim enters, clear buffer name so we don't try loading this one again
+				vim.api.nvim_buf_set_name(ev.buf, "")
+			else
+				-- After vim has entered, delete the directory buffer using proper method
+				local ok, Snacks = pcall(require, "snacks")
+				if ok and Snacks.bufdelete then
+					-- Use snacks bufdelete to maintain window layout
+					Snacks.bufdelete.delete(ev.buf)
+				else
+					-- Fallback to manual deletion with delay
+					vim.defer_fn(function()
+						if vim.api.nvim_buf_is_valid(ev.buf) then
+							pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
+						end
+					end, 10)
+				end
+			end
+		end
+	end
+
+	-- Open file browser when entering a directory buffer
+	vim.api.nvim_create_autocmd("BufEnter", {
+		group = group,
+		callback = handle_directory_buffer,
+	})
+
+	-- Handle current buffer if it's a directory
+	local current_file = vim.api.nvim_buf_get_name(0)
+	if current_file ~= "" and vim.fn.isdirectory(current_file) == 1 then
+		handle_directory_buffer({ buf = 0, file = current_file })
+	end
 end
 
 ---Open the file browser picker
@@ -120,10 +187,11 @@ function M.file_browser(opts)
 
 	local initial_cwd = active_root()
 
-	-- Store opts on the picker for toggle_hidden to access
+	-- Store opts on the picker for actions to access
 	local picker_opts = {
 		cwd = initial_cwd,
 		title = roots.title_for(state.idx, state.roots, initial_cwd),
+		opts = opts, -- Store the options for actions to access
 
 		finder = finder.create_finder(opts, state),
 		format = finder.create_format_function(opts),
@@ -162,6 +230,12 @@ function M.file_browser(opts)
 	}
 
 	Snacks.picker.pick(picker_opts)
+end
+
+---Enable netrw replacement (can be called without setup)
+function M.replace_netrw()
+	M.config.replace_netrw = true
+	M.setup_netrw_replacement()
 end
 
 return M

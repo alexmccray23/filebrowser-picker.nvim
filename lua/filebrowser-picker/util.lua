@@ -131,10 +131,17 @@ function M.scan_directory(dir, opts)
 
 		local stat = uv.fs_stat(path)
 		if stat then
+			-- Determine if this is a directory, considering symlinks
+			local is_dir = type == "directory"
+			if not is_dir and type == "link" and opts.follow_symlinks then
+				-- For symlinks, check what they actually point to
+				is_dir = stat.type == "directory"
+			end
+
 			table.insert(items, {
 				file = path,
 				text = name,
-				dir = type == "directory",
+				dir = is_dir,
 				hidden = hidden,
 				size = stat.size or 0,
 				mtime = stat.mtime.sec or 0,

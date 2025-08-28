@@ -197,7 +197,19 @@ function M.confirm(picker, item)
 		return
 	end
 
-	if item.dir then
+	-- Check if this should be treated as a directory
+	local is_directory = item.dir
+
+	-- For symlinks, also check if they point to directories (when follow_symlinks is enabled)
+	if not is_directory and item.type == "link" then
+		local picker_opts = (picker and picker.opts) or {}
+		if picker_opts.follow_symlinks then
+			local stat = uv.fs_stat(item.file)
+			is_directory = stat and stat.type == "directory"
+		end
+	end
+
+	if is_directory then
 		-- Navigate to directory
 		navigate_to_directory(picker, item.file)
 	else

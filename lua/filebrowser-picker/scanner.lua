@@ -147,6 +147,10 @@ local function build_rg_scanner(opts, roots)
 		table.insert(base_args, "--hidden")
 	end
 
+	if opts.follow_symlinks then
+		table.insert(base_args, "--follow")
+	end
+
 	if not opts.respect_gitignore then
 		table.insert(base_args, "--no-ignore")
 		table.insert(base_args, "--no-ignore-vcs")
@@ -220,11 +224,19 @@ local function build_uv_scanner(opts, roots)
 		local queue = vim.deepcopy(roots)
 		local active = 0
 		local finished = false
+		local visited = {} -- Track visited paths to prevent infinite loops
 
 		local function process_directory(dir)
 			if finished then
 				return
 			end
+
+			-- Prevent infinite loops with symlinks
+			local real_path = uv.fs_realpath(dir) or dir
+			if visited[real_path] then
+				return
+			end
+			visited[real_path] = true
 
 			uv.fs_scandir(dir, function(err, handle)
 				active = active - 1
@@ -252,6 +264,20 @@ local function build_uv_scanner(opts, roots)
 							on_item(full_path)
 						elseif type == "directory" then
 							table.insert(queue, full_path)
+						elseif type == "link" and opts.follow_symlinks then
+							-- For symlinks, check what they point to (with loop protection)
+							local real_target = uv.fs_realpath(full_path)
+							if real_target and not visited[real_target] then
+								uv.fs_stat(full_path, function(stat_err, stat)
+									if not stat_err and stat then
+										if stat.type == "file" then
+											on_item(full_path)
+										elseif stat.type == "directory" then
+											table.insert(queue, full_path)
+										end
+									end
+								end)
+							end
 						end
 
 						::continue::

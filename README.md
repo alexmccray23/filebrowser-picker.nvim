@@ -1,6 +1,6 @@
 # filebrowser-picker.nvim
 
-A file browser for Neovim using snacks.nvim's picker, providing telescope-file-browser.nvim functionality with better performance through async operations.
+Yet another file browser for Neovim, providing telescope-file-browser.nvim's functionality/UX with snacks.nvim's picker.
 
 ## Features
 
@@ -167,6 +167,9 @@ require("filebrowser-picker").setup({
   -- Follow symbolic links (default: false) 
   follow_symlinks = false,
   
+  -- Replace netrw with file browser for all directory operations (default: false)
+  replace_netrw = false,
+  
   -- Respect .gitignore (default: true)
   respect_gitignore = true,
   
@@ -188,12 +191,10 @@ require("filebrowser-picker").setup({
   layout_width_threshold = 120,  -- Switch to vertical layout below this width
   
   -- Icon configuration (uses mini.icons or nvim-web-devicons when available)
-  -- Individual files get icons from icon libraries automatically
-  -- These are fallback icons when libraries are not available
   icons = {
     folder_closed = "󰉋 ",
     folder_open = "󰝰 ",
-    file = "󰈔 ",           -- fallback for files without specific icons
+    file = "󰈔 ",
     symlink = "󰌷 ",
   },
   
@@ -203,6 +204,38 @@ require("filebrowser-picker").setup({
     -- ["<C-custom>"] = "action_name"
   }
 })
+```
+
+## Advanced Features
+
+### Symlink Following
+
+Enable `follow_symlinks = true` to treat symbolic links as their target type:
+
+```lua
+require("filebrowser-picker").setup({
+  follow_symlinks = true,  -- Follow symlinks when scanning and navigating
+})
+```
+
+When enabled:
+- Symlinked directories appear and behave as regular directories
+- Can navigate into symlinked directories seamlessly
+- File scanners (fd, rg, uv) will follow symlinks when discovering files
+- Includes infinite loop protection for circular symlinks
+
+### Netrw Replacement
+
+Replace Neovim's built-in netrw file explorer completely:
+
+```lua
+require("filebrowser-picker").setup({
+  replace_netrw = true,     -- Replace netrw with file browser
+  follow_symlinks = true,   -- Recommended when replacing netrw
+})
+
+-- Or enable directly without full setup
+require("filebrowser-picker").replace_netrw()
 ```
 
 ## Performance
