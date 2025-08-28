@@ -2,6 +2,7 @@
 local M = {}
 
 local util = require("filebrowser-picker.util")
+local notify = require("filebrowser-picker.notify")
 
 ---Normalize roots configuration into a valid list of directories
 ---@param opts table Configuration options
@@ -23,10 +24,7 @@ function M.normalize_roots(opts)
 			if vim.fn.isdirectory(absolute_root) == 1 then
 				table.insert(valid_roots, absolute_root)
 			else
-				vim.notify(
-					"Invalid root directory: " .. root .. " (expanded: " .. absolute_root .. ")",
-					vim.log.levels.WARN
-				)
+				notify.warn("Invalid root directory: " .. root .. " (expanded: " .. absolute_root .. ")")
 			end
 		end
 		roots = #valid_roots > 0 and valid_roots or { util.get_initial_directory(opts.cwd) }
@@ -146,7 +144,7 @@ function M.create_actions(state, ui_select)
 			end
 			path = vim.fn.fnamemodify(vim.fn.expand(path), ":p")
 			if vim.fn.isdirectory(path) ~= 1 then
-				vim.notify("Not a directory: " .. path, vim.log.levels.WARN)
+				notify.warn("Not a directory: " .. path)
 				return
 			end
 			table.insert(state.roots, state.idx + 1, path)
@@ -166,7 +164,7 @@ function M.create_actions(state, ui_select)
 
 		root_remove = function(picker)
 			if #state.roots <= 1 then
-				vim.notify("Cannot remove the last root", vim.log.levels.WARN)
+				notify.warn("Cannot remove the last root")
 				return
 			end
 			table.remove(state.roots, state.idx)

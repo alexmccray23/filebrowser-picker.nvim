@@ -2,6 +2,7 @@
 local M = {}
 
 local uv = vim.uv or vim.loop
+local notify = require("filebrowser-picker.notify")
 
 -- Cache for git root lookups to avoid repeated shell calls
 local git_root_cache = {}
@@ -111,7 +112,7 @@ function M.scan_directory(dir, opts)
 	local handle = uv.fs_scandir(dir)
 
 	if not handle then
-		vim.notify("Failed to scan directory: " .. dir, vim.log.levels.WARN)
+		notify.warn("Failed to scan directory: " .. dir)
 		return items
 	end
 

@@ -3,6 +3,7 @@ local M = {}
 local uv = vim.uv or vim.loop
 local util = require("filebrowser-picker.util")
 local scanner = require("filebrowser-picker.scanner")
+local notify = require("filebrowser-picker.notify")
 
 ---@class FileBrowserItem
 ---@field file string Absolute path to the file/directory
@@ -165,7 +166,7 @@ local function navigate_to_directory(picker, path)
 	-- Ensure directory exists
 	if not util.is_directory(path) then
 		vim.schedule(function()
-			vim.notify("Not a directory: " .. path, vim.log.levels.WARN)
+			notify.warn("Not a directory: " .. path)
 		end)
 		return
 	end
@@ -293,7 +294,7 @@ function M.goto_project_root(picker)
 		navigate_to_directory(picker, git_root)
 	else
 		vim.schedule(function()
-			vim.notify("No git repository found", vim.log.levels.WARN)
+			notify.warn("No git repository found")
 		end)
 	end
 end
@@ -390,7 +391,7 @@ function M.create_file(picker)
 		-- Validate and normalize the path
 		local target_path, error_msg = validate_creation_path(clean_input, cwd)
 		if not target_path then
-			vim.notify("Invalid path: " .. error_msg, vim.log.levels.ERROR)
+			notify.invalid_path(clean_input, error_msg)
 			return
 		end
 		
@@ -404,7 +405,7 @@ function M.create_file(picker)
 				success = true
 				table.insert(created_items, "directory: " .. target_path)
 			else
-				vim.notify("Failed to create directory: " .. (err or "unknown error"), vim.log.levels.ERROR)
+				notify.error("Failed to create directory: " .. (err or "unknown error"))
 				return
 			end
 		else
@@ -417,7 +418,7 @@ function M.create_file(picker)
 				if ok then
 					table.insert(created_items, "directories: " .. parent_dir)
 				else
-					vim.notify("Failed to create parent directories: " .. (err or "unknown error"), vim.log.levels.ERROR)
+					notify.error("Failed to create parent directories: " .. (err or "unknown error"))
 					return
 				end
 			end
@@ -429,15 +430,14 @@ function M.create_file(picker)
 				success = true
 				table.insert(created_items, "file: " .. target_path)
 			else
-				vim.notify("Failed to create file: " .. target_path, vim.log.levels.ERROR)
+				notify.error("Failed to create file: " .. target_path)
 				return
 			end
 		end
 		
 		-- Report what was created
 		if success then
-			local message = "Created " .. table.concat(created_items, " and ")
-			vim.notify(message)
+			notify.created(created_items)
 			
 			-- Refresh picker
 			picker:find({ refresh = true })
@@ -475,7 +475,7 @@ function M.move(picker, item)
 	end
 
 	if #selected_items == 0 then
-		vim.notify("No files selected to move", vim.log.levels.WARN)
+		notify.no_selection("move")
 		return
 	end
 
@@ -532,12 +532,7 @@ function M.move(picker, item)
 			picker:find({ refresh = true })
 
 			-- Report results
-			if moved_count > 0 then
-				vim.notify("Moved " .. moved_count .. " files")
-			end
-			if #errors > 0 then
-				vim.notify("Some moves failed:\n" .. table.concat(errors, "\n"), vim.log.levels.ERROR)
-			end
+			notify.operation_result("moved", moved_count, #selected_items, #errors > 0 and errors or nil)
 		end)
 	else
 		-- Single file move - use input for custom destination
@@ -552,7 +547,7 @@ function M.move(picker, item)
 
 			-- Check if destination already exists
 			if vim.fn.filereadable(dest_path) == 1 or vim.fn.isdirectory(dest_path) == 1 then
-				vim.notify("Destination already exists: " .. dest_path, vim.log.levels.ERROR)
+				notify.error("Destination already exists: " .. dest_path)
 				return
 			end
 
@@ -570,10 +565,10 @@ function M.move(picker, item)
 			end)
 
 			if ok then
-				vim.notify("Moved: " .. single_item.text .. " -> " .. vim.fn.fnamemodify(dest_path, ":t"))
+				notify.success("Moved: " .. single_item.text .. " -> " .. vim.fn.fnamemodify(dest_path, ":t"))
 				picker:find({ refresh = true })
 			else
-				vim.notify("Failed to move: " .. (err or "unknown error"), vim.log.levels.ERROR)
+				notify.error("Failed to move: " .. (err or "unknown error"))
 			end
 		end)
 	end
@@ -592,7 +587,7 @@ function M.yank(picker)
 	end
 
 	if #selected_items == 0 then
-		vim.notify("No files to yank", vim.log.levels.WARN)
+		notify.no_selection("yank")
 		return
 	end
 
@@ -606,7 +601,8 @@ function M.yank(picker)
 
 	-- Clear selection and notify
 	picker.list:set_selected()
-	vim.notify("Yanked " .. #selected_items .. " files")
+	local item_word = #selected_items == 1 and "file" or "files"
+	notify.success("Yanked " .. #selected_items .. " " .. item_word)
 end
 
 ---Action: Paste files from register to current directory
@@ -618,7 +614,7 @@ function M.paste(picker)
 	end, files)
 
 	if #files == 0 then
-		vim.notify("No files in register to paste", vim.log.levels.WARN)
+		notify.warn("No files in register to paste")
 		return
 	end
 
@@ -649,10 +645,11 @@ function M.paste(picker)
 		end)
 
 		if ok then
-			vim.notify("Pasted " .. #files .. " files")
+			local item_word = #files == 1 and "file" or "files"
+			notify.success("Pasted " .. #files .. " " .. item_word)
 			picker:find({ refresh = true })
 		else
-			vim.notify("Failed to paste files: " .. (err or "unknown error"), vim.log.levels.ERROR)
+			notify.error("Failed to paste files: " .. (err or "unknown error"))
 		end
 	end)
 end
@@ -754,7 +751,7 @@ function M.delete(picker, item)
 	end
 
 	if #selected_items == 0 then
-		vim.notify("No files selected to delete", vim.log.levels.WARN)
+		notify.no_selection("delete")
 		return
 	end
 
@@ -786,14 +783,7 @@ function M.delete(picker, item)
 		picker:find({ refresh = true })
 
 		-- Report results
-		if deleted_count > 0 then
-			local message = deleted_count == 1 and "Deleted: " .. selected_items[1].text
-				or "Deleted " .. deleted_count .. " files"
-			vim.notify(message)
-		end
-		if #errors > 0 then
-			vim.notify("Some deletions failed:\n" .. table.concat(errors, "\n"), vim.log.levels.ERROR)
-		end
+		notify.operation_result("deleted", deleted_count, #selected_items, #errors > 0 and errors or nil)
 	end
 
 	-- If we have non-empty directories, show enhanced confirmation
@@ -817,7 +807,7 @@ function M.delete(picker, item)
 					if input == "DELETE" then
 						perform_deletion(true)
 					else
-						vim.notify("Deletion cancelled", vim.log.levels.INFO)
+						notify.cancelled("deletion")
 					end
 				end)
 			end
@@ -878,7 +868,7 @@ function M.set_pwd(picker)
 	local current_dir = picker:cwd()
 	if current_dir then
 		vim.cmd("cd " .. vim.fn.fnameescape(current_dir))
-		vim.notify("Set working directory to: " .. current_dir)
+		notify.info("Set working directory to: " .. current_dir)
 	end
 end
 
