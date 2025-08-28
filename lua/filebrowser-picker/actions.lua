@@ -327,35 +327,121 @@ function M.change_directory(picker, item)
 	navigate_to_directory(picker, target_dir)
 end
 
----Action: Create new file/directory
+---Helper: Validate and normalize creation path
+---@param input string User input path
+---@param base_dir string Base directory to create relative to
+---@return string? normalized_path, string? error_message
+local function validate_creation_path(input, base_dir)
+	-- Trim whitespace
+	input = input:gsub("^%s+", ""):gsub("%s+$", "")
+	
+	-- Prevent empty paths
+	if input == "" then
+		return nil, "Path cannot be empty"
+	end
+	
+	-- Prevent absolute paths (security)
+	if input:sub(1, 1) == "/" then
+		return nil, "Absolute paths not allowed"
+	end
+	
+	-- Normalize path separators and resolve relative components
+	local parts = {}
+	for part in input:gmatch("[^/]+") do
+		if part == ".." then
+			if #parts > 0 then
+				table.remove(parts)
+			else
+				return nil, "Cannot escape base directory"
+			end
+		elseif part ~= "." and part ~= "" then
+			table.insert(parts, part)
+		end
+	end
+	
+	if #parts == 0 then
+		return nil, "Invalid path"
+	end
+	
+	-- Construct full path
+	local relative_path = table.concat(parts, "/")
+	local full_path = base_dir .. "/" .. relative_path
+	
+	return full_path, nil
+end
+
+---Action: Create new file/directory with intelligent path parsing
 ---@param picker any
 function M.create_file(picker)
-	vim.ui.input({ prompt = "Create: " }, function(name)
-		if not name or name == "" then
+	vim.ui.input({ 
+		prompt = "Create (supports nested paths): ",
+		default = ""
+	}, function(input)
+		if not input or input == "" then
 			return
 		end
 
 		local cwd = picker:cwd()
-		local path = cwd .. "/" .. name
-
-		if name:sub(-1) == "/" then
-			-- Create directory
-			local dir_path = path:sub(1, -2)
-			vim.fn.mkdir(dir_path, "p")
-			vim.notify("Created directory: " .. dir_path)
+		local is_directory = input:sub(-1) == "/"
+		
+		-- Remove trailing slash for path validation
+		local clean_input = is_directory and input:sub(1, -2) or input
+		
+		-- Validate and normalize the path
+		local target_path, error_msg = validate_creation_path(clean_input, cwd)
+		if not target_path then
+			vim.notify("Invalid path: " .. error_msg, vim.log.levels.ERROR)
+			return
+		end
+		
+		local success = false
+		local created_items = {}
+		
+		if is_directory then
+			-- Create directory (with parents)
+			local ok, err = pcall(vim.fn.mkdir, target_path, "p")
+			if ok then
+				success = true
+				table.insert(created_items, "directory: " .. target_path)
+			else
+				vim.notify("Failed to create directory: " .. (err or "unknown error"), vim.log.levels.ERROR)
+				return
+			end
 		else
-			-- Create file
-			local file = io.open(path, "w")
+			-- Create file (with parent directories if needed)
+			local parent_dir = vim.fn.fnamemodify(target_path, ":h")
+			
+			-- Create parent directories if they don't exist
+			if parent_dir ~= cwd and vim.fn.isdirectory(parent_dir) == 0 then
+				local ok, err = pcall(vim.fn.mkdir, parent_dir, "p")
+				if ok then
+					table.insert(created_items, "directories: " .. parent_dir)
+				else
+					vim.notify("Failed to create parent directories: " .. (err or "unknown error"), vim.log.levels.ERROR)
+					return
+				end
+			end
+			
+			-- Create the file
+			local file = io.open(target_path, "w")
 			if file then
 				file:close()
-				vim.notify("Created file: " .. path)
+				success = true
+				table.insert(created_items, "file: " .. target_path)
 			else
-				vim.notify("Failed to create file: " .. path, vim.log.levels.ERROR)
+				vim.notify("Failed to create file: " .. target_path, vim.log.levels.ERROR)
+				return
 			end
 		end
-
-		-- Refresh picker
-		picker:find({ refresh = true })
+		
+		-- Report what was created
+		if success then
+			local message = "Created " .. table.concat(created_items, " and ")
+			vim.notify(message)
+			
+			-- Refresh picker
+			picker:find({ refresh = true })
+		end
 	end)
 end
 
@@ -571,6 +657,92 @@ function M.paste(picker)
 	end)
 end
 
+---Helper: Check if directory is empty
+---@param path string
+---@return boolean
+local function is_directory_empty(path)
+	local handle = uv.fs_scandir(path)
+	if not handle then
+		return false
+	end
+	
+	local name = uv.fs_scandir_next(handle)
+	return name == nil
+end
+
+---Helper: Recursively delete directory using vim.uv
+---@param path string
+---@return boolean success
+---@return string? error
+local function delete_directory_recursive(path)
+	local handle = uv.fs_scandir(path)
+	if not handle then
+		return false, "Cannot scan directory"
+	end
+
+	-- First delete all contents
+	while true do
+		local name, type = uv.fs_scandir_next(handle)
+		if not name then
+			break
+		end
+
+		local child_path = path .. "/" .. name
+		local success, err
+
+		if type == "directory" then
+			-- Recursively delete subdirectories
+			success, err = delete_directory_recursive(child_path)
+		else
+			-- Delete files and other types
+			success, err = uv.fs_unlink(child_path)
+		end
+
+		if not success then
+			return false, err or ("Failed to delete " .. name)
+		end
+	end
+
+	-- Finally delete the empty directory
+	local success, err = uv.fs_rmdir(path)
+	return success ~= nil, err
+end
+
+---Helper: Delete a single file or directory with enhanced error handling
+---@param item FileBrowserItem
+---@param force_recursive? boolean Skip confirmation for recursive deletion
+---@return boolean success
+---@return string? error
+local function delete_single_item(item, force_recursive)
+	if item.dir then
+		-- Handle directory deletion
+		if is_directory_empty(item.file) then
+			-- Empty directory - use fs_rmdir
+			local success, err = uv.fs_rmdir(item.file)
+			if success then
+				return true
+			else
+				return false, err or "Failed to remove directory"
+			end
+		else
+			-- Non-empty directory
+			if force_recursive then
+				return delete_directory_recursive(item.file)
+			else
+				return false, "Directory not empty (use recursive delete)"
+			end
+		end
+	else
+		-- Handle file deletion
+		local success, err = uv.fs_unlink(item.file)
+		if success then
+			return true
+		else
+			return false, err or "Failed to delete file"
+		end
+	end
+end
+
 ---Action: Delete selected file(s) - supports multi-file selection
 ---@param picker any
 ---@param item? FileBrowserItem
@@ -586,29 +758,21 @@ function M.delete(picker, item)
 		return
 	end
 
-	-- Build confirmation prompt
-	local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
-
-	vim.ui.select({ "No", "Yes" }, {
-		prompt = "Delete " .. what .. "?",
-	}, function(_, idx)
-		if idx ~= 2 then
-			return
+	-- Check for non-empty directories that need recursive deletion
+	local non_empty_dirs = {}
+	for _, itm in ipairs(selected_items) do
+		if itm.dir and not is_directory_empty(itm.file) then
+			table.insert(non_empty_dirs, itm.text)
 		end
+	end
 
+	local function perform_deletion(force_recursive)
 		local deleted_count = 0
 		local errors = {}
 
-		-- Delete each file
+		-- Delete each file/directory
 		for _, itm in ipairs(selected_items) do
-			local ok, err
-			if itm.dir then
-				-- For directories, os.remove only works on empty directories
-				ok, err = os.remove(itm.file)
-			else
-				-- For files
-				ok, err = os.remove(itm.file)
-			end
+			local ok, err = delete_single_item(itm, force_recursive)
 
 			if ok then
 				deleted_count = deleted_count + 1
@@ -630,7 +794,46 @@ function M.delete(picker, item)
 		if #errors > 0 then
 			vim.notify("Some deletions failed:\n" .. table.concat(errors, "\n"), vim.log.levels.ERROR)
 		end
-	end)
+	end
+
+	-- If we have non-empty directories, show enhanced confirmation
+	if #non_empty_dirs > 0 then
+		local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
+		local dir_warning = #non_empty_dirs == 1 
+			and "'" .. non_empty_dirs[1] .. "' contains files"
+			or #non_empty_dirs .. " directories contain files"
+		
+		vim.ui.select({ "Cancel", "Delete (files only)", "Delete recursively" }, {
+			prompt = "Delete " .. what .. "?\n" .. dir_warning .. " - choose option:",
+		}, function(_, idx)
+			if idx == 2 then
+				-- Delete files only, skip non-empty directories
+				perform_deletion(false)
+			elseif idx == 3 then
+				-- Strong confirmation for recursive deletion
+				vim.ui.input({
+					prompt = "Type 'DELETE' to confirm recursive deletion: ",
+				}, function(input)
+					if input == "DELETE" then
+						perform_deletion(true)
+					else
+						vim.notify("Deletion cancelled", vim.log.levels.INFO)
+					end
+				end)
+			end
+		end)
+	else
+		-- Standard confirmation for files and empty directories
+		local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
+		
+		vim.ui.select({ "No", "Yes" }, {
+			prompt = "Delete " .. what .. "?",
+		}, function(_, idx)
+			if idx == 2 then
+				perform_deletion(false)
+			end
+		end)
+	end
 end
 
 ---Action: Edit file in vertical split
