@@ -103,17 +103,17 @@ function M.file_browser(opts)
 	local navigation_actions = {
 		goto_parent = function(picker)
 			actions.goto_parent_with_state(picker, state)
-			picker.title = roots.title_for(state.idx, state.roots)
+			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
 			picker:update_titles()
 		end,
 		goto_previous_dir = function(picker)
 			actions.goto_previous_dir_with_state(picker, state)
-			picker.title = roots.title_for(state.idx, state.roots)
+			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
 			picker:update_titles()
 		end,
 		goto_project_root = function(picker)
 			actions.goto_project_root_with_state(picker, state)
-			picker.title = roots.title_for(state.idx, state.roots)
+			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
 			picker:update_titles()
 		end,
 	}
