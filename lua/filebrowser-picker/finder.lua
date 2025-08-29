@@ -127,7 +127,9 @@ end
 function M.create_finder(opts, state)
 	return function(_, ctx)
 		-- Always use our original opts, not Snacks picker.opts
-		local current_opts = opts
+		-- TODO: Address this change that broke the hidden_file toggle (reverting back to original for now)
+		-- local current_opts = opts
+		local current_opts = (ctx and ctx.picker and ctx.picker.opts) or opts
 
 		-- Always rebuild scanner on (re)invoke so it follows state changes
 		if opts.use_file_finder then
