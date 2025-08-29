@@ -188,6 +188,25 @@ function M.create_cleanup_function()
 			pcall(picker._fbp_cancel_scan)
 			picker._fbp_cancel_scan = nil
 		end
+
+		-- Stop git watchers if any
+		pcall(function()
+			local git = require("filebrowser-picker.git")
+			if picker and picker.opts then
+				-- unwatch current cwd
+				if picker.opts.cwd then
+					local root = util.get_git_root(picker.opts.cwd)
+					if root then git.unwatch_repo(root) end
+				end
+				-- unwatch provided roots
+				if picker.opts._roots then
+					for _, r in ipairs(picker.opts._roots) do
+						local root = util.get_git_root(r)
+						if root then git.unwatch_repo(root) end
+					end
+				end
+			end
+		end)
 	end
 end
 

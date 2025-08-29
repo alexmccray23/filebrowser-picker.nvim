@@ -267,6 +267,7 @@ function M.scan_directory(dir, opts)
 				size = stat.size or 0,
 				mtime = stat.mtime.sec or 0,
 				type = type or "file",
+				mode = stat.mode,
 			})
 		end
 
@@ -303,26 +304,18 @@ function M.get_git_root(dir)
 	dir = vim.fn.fnamemodify(dir, ":p:h")
 
 	-- Check cache first
-	local now = vim.uv.hrtime() / 1000000 -- Convert to milliseconds
+	local now = (vim.uv or vim.loop).hrtime() / 1000000 -- ms
 	local cached = git_root_cache[dir]
 	if cached and (now - cached.timestamp) < cache_expiry then
 		return cached.root
 	end
 
-	-- Find git root
-	local git_root =
-		vim.fn.system("git -C " .. vim.fn.shellescape(dir) .. " rev-parse --show-toplevel 2>/dev/null"):gsub("\n", "")
+	-- Delegate to git module's walk-up implementation (no shell)
+	local git_mod = require("filebrowser-picker.git")
+	local git_root = git_mod.get_git_root(dir)
 
-	-- Validate result
-	if vim.fn.isdirectory(git_root) ~= 1 then
-		git_root = nil
-	end
-
-	-- Cache result (including nil results to avoid repeated failed lookups)
-	git_root_cache[dir] = {
-		root = git_root,
-		timestamp = now,
-	}
+	-- Cache result (including nil)
+	git_root_cache[dir] = { root = git_root, timestamp = now }
 
 	return git_root
 end

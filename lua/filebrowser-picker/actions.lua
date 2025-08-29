@@ -81,6 +81,7 @@ function M.create_file_finder(opts, roots, ctx)
 				size = stat and stat.size or 0,
 				mtime = stat and stat.mtime and stat.mtime.sec or 0,
 				type = "file",
+				mode = stat and stat.mode or nil,
 			})
 
 			-- Batch updates for performance
@@ -156,13 +157,8 @@ function M.format_item(item, opts)
 			{ item.text, text_hl },
 		}
 
-		-- Add proper spacing before stats (dynamic based on window width)
-		local stat_width = 0
-		for _, component in ipairs(stat_components) do
-			if type(component) == "table" and component[1] then
-				stat_width = stat_width + #component[1]
-			end
-		end
+		-- Reserve fixed space for stats based on configured widths
+		local stat_width = stat_module.calculate_stat_width(display_stat)
 
 		-- Get available window width (approximation - picker window is usually most of the screen)
 		local win_width = vim.api.nvim_win_get_width(0)
@@ -212,12 +208,7 @@ function M.format_item(item, opts)
 
 				if git_icon and git_icon ~= "" then
 					-- result[#result + 1] = {
-					result[1] = {
-						col = 0,
-						virt_text = { { git_icon, git_hl }, { " " } },
-						virt_text_pos = "inline",
-						hl_mode = "combine",
-					}
+					result[1] = { (git_icon .. " "), git_hl }
 				end
 			end
 		end
@@ -242,12 +233,7 @@ function M.format_item(item, opts)
 
 				if git_icon and git_icon ~= "" then
 					-- result[#result + 1] = {
-					result[1] = {
-						col = 0,
-						virt_text = { { git_icon, git_hl }, { " " } },
-						virt_text_pos = "inline",
-						hl_mode = "combine",
-					}
+					result[1] = { (git_icon .. " "), git_hl }
 				end
 			end
 		end

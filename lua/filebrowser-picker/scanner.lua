@@ -206,7 +206,16 @@ local function build_uv_scanner(opts, roots)
 	local function should_exclude(path)
 		local basename = vim.fs.basename(path)
 		for _, pattern in ipairs(excludes) do
-			if basename:match(pattern) then
+			-- Treat plain strings as literal matches; allow regex when user explicitly uses magic chars
+			if type(pattern) == "string" then
+				local has_magic = pattern:find("[%^%$%(%)%%%.%[%]%*%+%-%?]") ~= nil
+				if has_magic then
+					if basename:match(pattern) then return true end
+				else
+					-- Exact name match for common folders like .git, node_modules, etc.
+					if basename == pattern then return true end
+				end
+			elseif tostring(pattern) and basename:match(tostring(pattern)) then
 				return true
 			end
 		end

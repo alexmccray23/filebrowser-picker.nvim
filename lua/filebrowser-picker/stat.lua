@@ -84,14 +84,18 @@ M.mode = {
 	width = 10,
 	right_justify = false,
 	display = function(item)
-		-- Get file stat for mode information
-		local stat = uv.fs_stat(item.file)
-		if not stat then
-			return { "----------", MODE_HL }
+		-- Use cached mode when available to avoid per-row fs_stat during rendering
+		local mode = item and item.mode
+		if not mode then
+			local st = (vim.uv or vim.loop).fs_stat(item.file)
+			if not st then
+				return { "----------", MODE_HL }
+			end
+			mode = st.mode
 		end
 
 		-- Use the working util.format_permissions function
-		local permissions = util.format_permissions(stat.mode)
+		local permissions = util.format_permissions(mode)
 
 		-- Create per-character highlighting - return as array of {text, hl} pairs
 		local result = {}
@@ -102,7 +106,7 @@ M.mode = {
 		end
 
 		return result
-	end,
+	end
 }
 
 -- Default stat configuration - what to show by default
