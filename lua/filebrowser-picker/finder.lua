@@ -126,10 +126,11 @@ end
 ---@return function Finder function
 function M.create_finder(opts, state)
 	return function(_, ctx)
-		-- Always use our original opts, not Snacks picker.opts
-		-- TODO: Address this change that broke the hidden_file toggle (reverting back to original for now)
-		-- local current_opts = opts
-		local current_opts = (ctx and ctx.picker and ctx.picker.opts) or opts
+		-- Merge static and dynamic ctx.picer.opts to enable git signs rendering
+		local current_opts = opts
+		if ctx and ctx.picker and ctx.picker.opts then
+			current_opts = vim.tbl_deep_extend("keep", ctx.picker.opts, opts)
+		end
 
 		-- Always rebuild scanner on (re)invoke so it follows state changes
 		if opts.use_file_finder then
