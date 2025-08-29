@@ -106,13 +106,19 @@ function M.read_directory(cwd, opts)
 	-- Add "../" entry unless at filesystem root
 	local parent = util.safe_dirname(cwd)
 	if parent and parent ~= cwd then
+		-- Get actual stat info for parent directory
+		local uv = vim.uv or vim.loop
+		local stat = uv.fs_stat(parent)
+		local parent_mtime = stat and stat.mtime and stat.mtime.sec or 0
+		local parent_size = stat and stat.size or 0
+		
 		table.insert(items, 1, {
 			file = parent,
 			text = "../",
 			dir = true,
 			hidden = false,
-			size = 0,
-			mtime = 0,
+			size = parent_size,
+			mtime = parent_mtime,
 			type = "directory",
 		})
 	end
