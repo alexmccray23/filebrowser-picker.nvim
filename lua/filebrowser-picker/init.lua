@@ -14,6 +14,7 @@ local finder = require("filebrowser-picker.finder")
 ---@field roots? string[]|string Multiple root directories to browse (default: {cwd})
 ---@field hidden? boolean Show hidden files (default: false)
 ---@field detailed_view? boolean Show detailed file information like ls -l (default: false)
+---@field display_stat? table Configure which stats to show in detailed view (default: {mode=true, size=true, date=true})
 ---@field follow_symlinks? boolean Follow symbolic links (default: false)
 ---@field respect_gitignore? boolean Respect .gitignore (default: true)
 ---@field git_status? boolean Show git status icons (default: true)
@@ -34,6 +35,11 @@ M.config = {
 	roots = nil,
 	hidden = false,
 	detailed_view = false,
+	display_stat = {
+		mode = true,
+		size = true,
+		date = true,
+	},
 	follow_symlinks = false,
 	respect_gitignore = true,
 	git_status = true,

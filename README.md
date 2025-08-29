@@ -169,6 +169,13 @@ require("filebrowser-picker").setup({
   -- Show detailed file information like ls -l (default: false)
   detailed_view = false,
   
+  -- Configure which stats to show in detailed view (default: all enabled)
+  display_stat = {
+    mode = true,  -- File permissions (drwxrwxrwx)
+    size = true,  -- File size (1.2K, 3.4M, etc.)
+    date = true,  -- Last modified date (Jan 15 14:23)
+  },
+  
   -- Follow symbolic links (default: false) 
   follow_symlinks = false,
   

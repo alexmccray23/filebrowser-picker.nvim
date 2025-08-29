@@ -143,24 +143,62 @@ function M.format_item(item, opts)
 
 	-- Format detailed view if enabled
 	if opts.detailed_view then
-		-- Get detailed file stats
-		local stat = uv.fs_stat(item.file)
-		local permissions = util.format_permissions(stat and stat.mode)
-		local size_str = util.format_size(item.size)
-		local time_str = util.format_timestamp(item.mtime)
+		local stat_module = require("filebrowser-picker.stat")
 
-		-- Create detailed display: permissions icon filename
-		local details = string.format("%-10s %8s %12s ", permissions, size_str, time_str)
+		-- Use default stats if display_stat is not configured
+		local display_stat = opts.display_stat or stat_module.default_stats
+		local stat_components = stat_module.build_stat_display(item, display_stat)
+
+		-- Build inline display like telescope-file-browser
 		result = {
-			{ details, "Comment" },
 			{ icon, icon_hl or "Normal" },
 			{ item.text, text_hl },
 		}
 
-		-- Add git status as right-aligned virtual text
-		local virt_text_parts = {}
+		-- Add proper spacing before stats (dynamic based on window width)
+		local stat_width = 0
+		for _, component in ipairs(stat_components) do
+			if type(component) == "table" and component[1] then
+				stat_width = stat_width + #component[1]
+			end
+		end
 
-		-- Add git status to right-aligned text
+		-- Get available window width (approximation - picker window is usually most of the screen)
+		local win_width = vim.api.nvim_win_get_width(0)
+		local available_width = math.floor(win_width * 1.07) -- Use 80% of window width as safe estimate
+
+		-- Calculate filename display width (icon + space + text)
+		local filename_width = #item.text + 2 -- +2 for icon and space
+
+		-- Reserve space for stats + git status + some margin
+		local reserved_width = stat_width + 10 -- +10 for git status and margins
+
+		-- Calculate padding to right-align stats within available space
+		local max_filename_area = available_width - reserved_width
+		local padding_length = math.max(max_filename_area - filename_width, 2) -- Minimum 2 spaces
+
+		-- Ensure we don't go crazy with padding on very wide windows
+		padding_length = math.min(padding_length, 80)
+
+		table.insert(result, { string.rep(" ", padding_length), "Normal" })
+
+		-- Add stat components inline
+		for _, component in ipairs(stat_components) do
+			if type(component) == "table" and component[1] then
+				local text = component[1]
+				local hl = component[2] or "Comment"
+
+				-- Handle highlight function case (for mode permissions)
+				if type(hl) == "function" then
+					-- For now, just use the text without complex highlighting
+					table.insert(result, { text, "Comment" })
+				else
+					table.insert(result, { text, hl })
+				end
+			end
+		end
+
+		-- Add git status at the end
 		if opts.git_status then
 			local git_status = git.get_status_sync(item.file)
 			if git_status then
@@ -172,18 +210,10 @@ function M.format_item(item, opts)
 				end
 
 				if git_icon and git_icon ~= "" then
-					table.insert(virt_text_parts, { " " .. git_icon, git_hl })
+					table.insert(result, { " " .. git_icon, git_hl })
 				end
 			end
 		end
-
-		table.insert(virt_text_parts, { " " }) -- trailing space
-		result[#result + 1] = {
-			col = 0,
-			virt_text = virt_text_parts,
-			virt_text_pos = "right_align",
-			hl_mode = "combine",
-		}
 	else
 		-- Normal view
 		result = {
@@ -1080,8 +1110,8 @@ function M.get_actions()
 		set_pwd = M.set_pwd,
 		cycle_roots = M.cycle_roots,
 		toggle_detailed_view = function(picker)
-			if picker.opts then
-				picker.opts.detailed_view = not picker.opts.detailed_view
+			if picker.opts and picker.opts.opts then
+				picker.opts.opts.detailed_view = not picker.opts.opts.detailed_view
 				if picker.refresh then
 					picker:refresh()
 				end
