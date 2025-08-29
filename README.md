@@ -145,7 +145,7 @@ require("filebrowser-picker").setup({
 | `<A-l>` | toggle_detailed_view | Toggle detailed file information (ls -l style) |
 | `<A-c>` | create_file | Create new file/directory |
 | `<A-r>` | rename | Rename selected item |
-| `<A-m>` | move | Move selected item(s) |
+| `<A-v>` | move | Move selected item(s) |
 | `<A-y>` | yank | Yank (copy to register) selected items |
 | `<A-p>` | paste | Paste files from register |
 | `<A-d>` | delete | Delete selected item |
