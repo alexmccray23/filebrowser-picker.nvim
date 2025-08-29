@@ -225,51 +225,50 @@ function M.preload_status(dir_path, on_complete)
 			on_complete()
 		end
 	end)
-
--- Lightweight repo watchers to invalidate cache quickly
-local _watchers = {}
-
----Watch .git/HEAD and .git/index, invalidating cache and optionally calling on_change
----@param root string
----@param on_change function|nil
-function M.watch_repo(root, on_change)
-	if not root or _watchers[root] then return end
-	local function mkwatch(path)
-		local w = uv.new_fs_event()
-		if not w then return end
-		w:start(path, {}, function()
-			M.invalidate_cache(root)
-			if on_change then pcall(on_change) end
-			-- kick off a refresh in background
-			pcall(M.preload_status, root, on_change)
-		end)
-		return w
-	end
-	local head = root .. '/.git/HEAD'
-	local index = root .. '/.git/index'
-	_watchers[root] = { mkwatch(head), mkwatch(index) }
 end
 
-function M.unwatch_repo(root)
-	local ws = _watchers[root]
-	if not ws then return end
-	for _, w in ipairs(ws) do
-		pcall(function() w:stop(); w:close() end)
-	end
-	_watchers[root] = nil
-end
+	-- Lightweight repo watchers to invalidate cache quickly
+	local _watchers = {}
 
-end
-
-	local cached = git_cache[git_root]
-	local now = uv.now()
-
-	-- Skip if cache is still fresh
-	if cached and (now - cached.timestamp) < CACHE_TTL then
-		if on_complete then
-			on_complete()
+	---Watch .git/HEAD and .git/index, invalidating cache and optionally calling on_change
+	---@param root string
+	---@param on_change function|nil
+	function M.watch_repo(root, on_change)
+		if not root or _watchers[root] then
+			return
 		end
-		return
+		local function mkwatch(path)
+			local w = uv.new_fs_event()
+			if not w then
+				return
+			end
+			w:start(path, {}, function()
+				M.invalidate_cache(root)
+				if on_change then
+					pcall(on_change)
+				end
+				-- kick off a refresh in background
+				pcall(M.preload_status, root, on_change)
+			end)
+			return w
+		end
+		local head = root .. "/.git/HEAD"
+		local index = root .. "/.git/index"
+		_watchers[root] = { mkwatch(head), mkwatch(index) }
+	end
+
+	function M.unwatch_repo(root)
+		local ws = _watchers[root]
+		if not ws then
+			return
+		end
+		for _, w in ipairs(ws) do
+			pcall(function()
+				w:stop()
+				w:close()
+			end)
+		end
+		_watchers[root] = nil
 	end
 
 return M
