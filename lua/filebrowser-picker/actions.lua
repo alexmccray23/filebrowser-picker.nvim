@@ -27,7 +27,7 @@ function M.create_directory_finder(opts, ctx)
 
 		-- Add parent directory entry if not at root
 		-- Get home directory safely (expand ~ outside of async context)
-		local home_dir = (os.getenv("HOME") or "/home/") .. (os.getenv("USER") or "user")
+		local home_dir = (vim.loop.os_homedir()) or ("/home/" .. (os.getenv("USER") or "user"))
 		if cwd ~= "/" and cwd ~= home_dir then
 			table.insert(items, 1, {
 				file = util.safe_dirname(cwd),

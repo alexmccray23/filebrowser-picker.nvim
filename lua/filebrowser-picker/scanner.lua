@@ -210,10 +210,16 @@ local function build_uv_scanner(opts, roots)
 			if type(pattern) == "string" then
 				local has_magic = pattern:find("[%^%$%(%)%%%.%[%]%*%+%-%?]") ~= nil
 				if has_magic then
-					if basename:match(pattern) then return true end
+					-- Treat excludes as literal names by default to avoid regex surprises.
+					-- If users want patterns, they can pass a magic pattern themselves.
+					if basename:find(pattern, 1, true) then
+						return true
+					end
 				else
 					-- Exact name match for common folders like .git, node_modules, etc.
-					if basename == pattern then return true end
+					if basename == pattern then
+						return true
+					end
 				end
 			elseif tostring(pattern) and basename:match(tostring(pattern)) then
 				return true

@@ -7,6 +7,7 @@ local roots = require("filebrowser-picker.roots")
 local finder = require("filebrowser-picker.finder")
 
 require("filebrowser-picker.perf").install()
+require("filebrowser-picker.perf_batch").install()
 
 ---@class FileBrowserPicker
 ---@field actions table<string, function>

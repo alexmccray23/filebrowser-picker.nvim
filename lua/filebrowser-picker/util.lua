@@ -57,14 +57,14 @@ function M.get_default_icons()
 		-- Git status icons (following Snacks.nvim conventions)
 		git = {
 			staged = "●", -- always overrides other icons when staged
-			added = "",
-			deleted = "",
+			added = "●",
+			deleted = " ",
 			ignored = " ",
 			modified = "○",
-			renamed = "",
+			renamed = " ",
 			unmerged = " ",
 			untracked = "?",
-			copied = "",
+			copied = " ",
 		},
 	}
 end
