@@ -151,6 +151,7 @@ function M.format_item(item, opts)
 
 		-- Build inline display like telescope-file-browser
 		result = {
+			{ "  ", "" },
 			{ icon, icon_hl or "Normal" },
 			{ item.text, text_hl },
 		}
@@ -165,13 +166,13 @@ function M.format_item(item, opts)
 
 		-- Get available window width (approximation - picker window is usually most of the screen)
 		local win_width = vim.api.nvim_win_get_width(0)
-		local available_width = math.floor(win_width * 1.07) -- Use 80% of window width as safe estimate
+		local available_width = math.floor(win_width * 0.99) -- Use 99% of window width as safe estimate
 
 		-- Calculate filename display width (icon + space + text)
 		local filename_width = #item.text + 2 -- +2 for icon and space
 
 		-- Reserve space for stats + git status + some margin
-		local reserved_width = stat_width + 10 -- +10 for git status and margins
+		local reserved_width = stat_width + 3 -- +3 for git status and margins
 
 		-- Calculate padding to right-align stats within available space
 		local max_filename_area = available_width - reserved_width
@@ -202,7 +203,7 @@ function M.format_item(item, opts)
 		if opts.git_status then
 			local git_status = git.get_status_sync(item.file)
 			if git_status then
-				local git_icon = opts.icons.git[git_status] or ""
+				local git_icon = opts.icons.git[git_status] or " "
 				local git_hl = opts.git_status_hl[git_status] or "Normal"
 
 				if git_status == "staged" then
@@ -210,13 +211,20 @@ function M.format_item(item, opts)
 				end
 
 				if git_icon and git_icon ~= "" then
-					table.insert(result, { " " .. git_icon, git_hl })
+					-- result[#result + 1] = {
+					result[1] = {
+						col = 0,
+						virt_text = { { git_icon, git_hl }, { " " } },
+						virt_text_pos = "inline",
+						hl_mode = "combine",
+					}
 				end
 			end
 		end
 	else
 		-- Normal view
 		result = {
+			{ "  ", "" },
 			{ icon, icon_hl or "Normal" },
 			{ item.text, text_hl },
 		}
@@ -225,7 +233,7 @@ function M.format_item(item, opts)
 		if opts.git_status then
 			local git_status = git.get_status_sync(item.file)
 			if git_status then
-				local git_icon = opts.icons.git[git_status] or ""
+				local git_icon = opts.icons.git[git_status] or " "
 				local git_hl = opts.git_status_hl[git_status] or "Normal"
 
 				if git_status == "staged" then
@@ -233,10 +241,11 @@ function M.format_item(item, opts)
 				end
 
 				if git_icon and git_icon ~= "" then
-					result[#result + 1] = {
+					-- result[#result + 1] = {
+					result[1] = {
 						col = 0,
 						virt_text = { { git_icon, git_hl }, { " " } },
-						virt_text_pos = "right_align",
+						virt_text_pos = "inline",
 						hl_mode = "combine",
 					}
 				end
@@ -1112,8 +1121,8 @@ function M.get_actions()
 		toggle_detailed_view = function(picker)
 			if picker.opts and picker.opts.opts then
 				picker.opts.opts.detailed_view = not picker.opts.opts.detailed_view
-				if picker.refresh then
-					picker:refresh()
+				if picker.update then
+					picker:find({ refresh = true })
 				end
 			end
 		end,

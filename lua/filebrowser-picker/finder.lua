@@ -163,8 +163,11 @@ end
 ---@param opts table Configuration options
 ---@return function Format function
 function M.create_format_function(opts)
-	return function(item)
-		return actions.format_item(item, opts)
+	return function(item, picker)
+		-- Use picker options if available (for dynamic updates like toggle)
+		-- Otherwise fall back to the original opts closure
+		local active_opts = (picker and picker.opts and picker.opts.opts) or opts
+		return actions.format_item(item, active_opts)
 	end
 end
 
