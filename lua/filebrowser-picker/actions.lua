@@ -4,6 +4,7 @@ local uv = vim.uv or vim.loop
 local util = require("filebrowser-picker.util")
 local scanner = require("filebrowser-picker.scanner")
 local notify = require("filebrowser-picker.notify")
+local git = require("filebrowser-picker.git")
 
 ---@class FileBrowserItem
 ---@field file string Absolute path to the file/directory
@@ -60,6 +61,7 @@ function M.create_file_finder(opts, roots, ctx)
 			use_fd = config.use_fd,
 			use_rg = config.use_rg,
 			excludes = config.excludes,
+			git_status = config.git_status,
 		}
 
 		local scan_fn = scanner.build_scanner(scan_opts, roots)
@@ -137,10 +139,82 @@ function M.format_item(item, opts)
 	-- Add space after icon for proper spacing
 	icon = icon .. " "
 
-	return {
-		{ icon, icon_hl or "Normal" },
-		{ item.text, text_hl },
-	}
+	local result
+
+	-- Format detailed view if enabled
+	if opts.detailed_view then
+		-- Get detailed file stats
+		local stat = uv.fs_stat(item.file)
+		local permissions = util.format_permissions(stat and stat.mode)
+		local size_str = util.format_size(item.size)
+		local time_str = util.format_timestamp(item.mtime)
+
+		-- Create detailed display: permissions icon filename
+		local details = string.format("%-10s %8s %12s ", permissions, size_str, time_str)
+		result = {
+			{ details, "Comment" },
+			{ icon, icon_hl or "Normal" },
+			{ item.text, text_hl },
+		}
+
+		-- Add git status as right-aligned virtual text
+		local virt_text_parts = {}
+
+		-- Add git status to right-aligned text
+		if opts.git_status then
+			local git_status = git.get_status_sync(item.file)
+			if git_status then
+				local git_icon = opts.icons.git[git_status] or ""
+				local git_hl = opts.git_status_hl[git_status] or "Normal"
+
+				if git_status == "staged" then
+					git_icon = opts.icons.git.staged
+				end
+
+				if git_icon and git_icon ~= "" then
+					table.insert(virt_text_parts, { " " .. git_icon, git_hl })
+				end
+			end
+		end
+
+		table.insert(virt_text_parts, { " " }) -- trailing space
+		result[#result + 1] = {
+			col = 0,
+			virt_text = virt_text_parts,
+			virt_text_pos = "right_align",
+			hl_mode = "combine",
+		}
+	else
+		-- Normal view
+		result = {
+			{ icon, icon_hl or "Normal" },
+			{ item.text, text_hl },
+		}
+
+		-- Add git status as right-aligned
+		if opts.git_status then
+			local git_status = git.get_status_sync(item.file)
+			if git_status then
+				local git_icon = opts.icons.git[git_status] or ""
+				local git_hl = opts.git_status_hl[git_status] or "Normal"
+
+				if git_status == "staged" then
+					git_icon = opts.icons.git.staged
+				end
+
+				if git_icon and git_icon ~= "" then
+					result[#result + 1] = {
+						col = 0,
+						virt_text = { { git_icon, git_hl }, { " " } },
+						virt_text_pos = "right_align",
+						hl_mode = "combine",
+					}
+				end
+			end
+		end
+	end
+
+	return result
 end
 
 ---Safe path normalization for async context
@@ -202,7 +276,7 @@ local function navigate_to_directory(picker, path, state, update_title)
 			picker.list:view(1)
 		end,
 	})
-	
+
 	return true
 end
 
@@ -401,17 +475,17 @@ end
 local function validate_creation_path(input, base_dir)
 	-- Trim whitespace
 	input = input:gsub("^%s+", ""):gsub("%s+$", "")
-	
+
 	-- Prevent empty paths
 	if input == "" then
 		return nil, "Path cannot be empty"
 	end
-	
+
 	-- Prevent absolute paths (security)
 	if input:sub(1, 1) == "/" then
 		return nil, "Absolute paths not allowed"
 	end
-	
+
 	-- Normalize path separators and resolve relative components
 	local parts = {}
 	for part in input:gmatch("[^/]+") do
@@ -425,24 +499,24 @@ local function validate_creation_path(input, base_dir)
 			table.insert(parts, part)
 		end
 	end
-	
+
 	if #parts == 0 then
 		return nil, "Invalid path"
 	end
-	
+
 	-- Construct full path
 	local relative_path = table.concat(parts, "/")
 	local full_path = base_dir .. "/" .. relative_path
-	
+
 	return full_path, nil
 end
 
 ---Action: Create new file/directory with intelligent path parsing
 ---@param picker any
 function M.create_file(picker)
-	vim.ui.input({ 
+	vim.ui.input({
 		prompt = "Create (supports nested paths): ",
-		default = ""
+		default = "",
 	}, function(input)
 		if not input or input == "" then
 			return
@@ -450,20 +524,20 @@ function M.create_file(picker)
 
 		local cwd = picker:cwd()
 		local is_directory = input:sub(-1) == "/"
-		
+
 		-- Remove trailing slash for path validation
 		local clean_input = is_directory and input:sub(1, -2) or input
-		
+
 		-- Validate and normalize the path
 		local target_path, error_msg = validate_creation_path(clean_input, cwd)
 		if not target_path then
 			notify.invalid_path(clean_input, error_msg)
 			return
 		end
-		
+
 		local success = false
 		local created_items = {}
-		
+
 		if is_directory then
 			-- Create directory (with parents)
 			local ok, err = pcall(vim.fn.mkdir, target_path, "p")
@@ -477,7 +551,7 @@ function M.create_file(picker)
 		else
 			-- Create file (with parent directories if needed)
 			local parent_dir = vim.fn.fnamemodify(target_path, ":h")
-			
+
 			-- Create parent directories if they don't exist
 			if parent_dir ~= cwd and vim.fn.isdirectory(parent_dir) == 0 then
 				local ok, err = pcall(vim.fn.mkdir, parent_dir, "p")
@@ -488,7 +562,7 @@ function M.create_file(picker)
 					return
 				end
 			end
-			
+
 			-- Create the file
 			local file = io.open(target_path, "w")
 			if file then
@@ -500,11 +574,11 @@ function M.create_file(picker)
 				return
 			end
 		end
-		
+
 		-- Report what was created
 		if success then
 			notify.created(created_items)
-			
+
 			-- Refresh picker
 			picker:find({ refresh = true })
 		end
@@ -728,7 +802,7 @@ local function is_directory_empty(path)
 	if not handle then
 		return false
 	end
-	
+
 	local name = uv.fs_scandir_next(handle)
 	return name == nil
 end
@@ -855,10 +929,9 @@ function M.delete(picker, item)
 	-- If we have non-empty directories, show enhanced confirmation
 	if #non_empty_dirs > 0 then
 		local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
-		local dir_warning = #non_empty_dirs == 1 
-			and "'" .. non_empty_dirs[1] .. "' contains files"
+		local dir_warning = #non_empty_dirs == 1 and "'" .. non_empty_dirs[1] .. "' contains files"
 			or #non_empty_dirs .. " directories contain files"
-		
+
 		vim.ui.select({ "Cancel", "Delete (files only)", "Delete recursively" }, {
 			prompt = "Delete " .. what .. "?\n" .. dir_warning .. " - choose option:",
 		}, function(_, idx)
@@ -881,7 +954,7 @@ function M.delete(picker, item)
 	else
 		-- Standard confirmation for files and empty directories
 		local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
-		
+
 		vim.ui.select({ "No", "Yes" }, {
 			prompt = "Delete " .. what .. "?",
 		}, function(_, idx)
@@ -1006,6 +1079,14 @@ function M.get_actions()
 		edit_tab = M.edit_tab,
 		set_pwd = M.set_pwd,
 		cycle_roots = M.cycle_roots,
+		toggle_detailed_view = function(picker)
+			if picker.opts then
+				picker.opts.detailed_view = not picker.opts.detailed_view
+				if picker.refresh then
+					picker:refresh()
+				end
+			end
+		end,
 	}
 end
 

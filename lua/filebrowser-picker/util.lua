@@ -54,6 +54,18 @@ function M.get_default_icons()
 		folder_open = "󰝰", -- keep simple for open folders
 		file = "󰈔", -- fallback for files without specific icons
 		symlink = "󰌷", -- symlinks are less common, keep simple fallback
+		-- Git status icons (following Snacks.nvim conventions)
+		git = {
+			staged = "●", -- always overrides other icons when staged
+			added = "",
+			deleted = "",
+			ignored = " ",
+			modified = "○",
+			renamed = "",
+			unmerged = " ",
+			untracked = "?",
+			copied = "",
+		},
 	}
 end
 
@@ -85,6 +97,108 @@ function M.is_hidden(name)
 	return name:sub(1, 1) == "."
 end
 
+---Bitwise AND operation (fallback if bit module not available)
+---@param a number
+---@param b number
+---@return number
+local function band(a, b)
+	if bit and bit.band then
+		return bit.band(a, b)
+	end
+	-- Fallback implementation
+	local result = 0
+	local bit_value = 1
+	while a > 0 or b > 0 do
+		if (a % 2) == 1 and (b % 2) == 1 then
+			result = result + bit_value
+		end
+		a = math.floor(a / 2)
+		b = math.floor(b / 2)
+		bit_value = bit_value * 2
+	end
+	return result
+end
+
+---Format file permissions from mode
+---@param mode number File mode from uv.fs_stat
+---@return string
+function M.format_permissions(mode)
+	if not mode then
+		return "----------"
+	end
+
+	local perms = ""
+
+	-- File type
+	if band(mode, 0x4000) ~= 0 then
+		perms = "d" -- directory
+	elseif band(mode, 0xA000) ~= 0 then
+		perms = "l" -- symlink
+	else
+		perms = "-" -- regular file
+	end
+
+	-- Owner permissions
+	perms = perms .. (band(mode, 0x100) ~= 0 and "r" or "-")
+	perms = perms .. (band(mode, 0x80) ~= 0 and "w" or "-")
+	perms = perms .. (band(mode, 0x40) ~= 0 and "x" or "-")
+
+	-- Group permissions
+	perms = perms .. (band(mode, 0x20) ~= 0 and "r" or "-")
+	perms = perms .. (band(mode, 0x10) ~= 0 and "w" or "-")
+	perms = perms .. (band(mode, 0x8) ~= 0 and "x" or "-")
+
+	-- Other permissions
+	perms = perms .. (band(mode, 0x4) ~= 0 and "r" or "-")
+	perms = perms .. (band(mode, 0x2) ~= 0 and "w" or "-")
+	perms = perms .. (band(mode, 0x1) ~= 0 and "x" or "-")
+
+	return perms
+end
+
+---Format file size in human readable format
+---@param size number Size in bytes
+---@return string
+function M.format_size(size)
+	if not size then
+		return "0"
+	end
+
+	local units = { "B", "K", "M", "G", "T" }
+	local unit_idx = 1
+	local file_size = size
+
+	while file_size >= 1024 and unit_idx < #units do
+		file_size = file_size / 1024
+		unit_idx = unit_idx + 1
+	end
+
+	if unit_idx == 1 then
+		return string.format("%d%s", file_size, units[unit_idx])
+	else
+		return string.format("%.1f%s", file_size, units[unit_idx])
+	end
+end
+
+---Format timestamp in ls -l style
+---@param timestamp number Unix timestamp
+---@return string
+function M.format_timestamp(timestamp)
+	if not timestamp then
+		return ""
+	end
+
+	local now = os.time()
+	local diff = now - timestamp
+
+	-- If older than 6 months, show year
+	if diff > 6 * 30 * 24 * 3600 then
+		return os.date("%b %d  %Y", timestamp)
+	else
+		return os.date("%b %d %H:%M", timestamp)
+	end
+end
+
 ---Safe dirname function that works in async context
 ---@param path string
 ---@return string
@@ -110,6 +224,12 @@ end
 function M.scan_directory(dir, opts)
 	local items = {}
 	local handle = uv.fs_scandir(dir)
+
+	-- Preload git status for this directory if enabled
+	if opts.git_status then
+		local git = require("filebrowser-picker.git")
+		git.preload_status(dir, opts._git_refresh_callback)
+	end
 
 	if not handle then
 		notify.warn("Failed to scan directory: " .. dir)

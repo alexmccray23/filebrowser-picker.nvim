@@ -333,7 +333,16 @@ function M.build_scanner(opts, roots)
 		use_fd = true,
 		use_rg = true,
 		excludes = {},
+		git_status = false,
 	})
+
+	-- Preload git status for all roots if enabled
+	if opts.git_status then
+		local git = require("filebrowser-picker.git")
+		for _, root in ipairs(roots) do
+			git.preload_status(root, opts._git_refresh_callback)
+		end
+	end
 
 	-- Prefer fd > rg > uv fallback
 	if opts.use_fd and has_executable("fd") then

@@ -34,7 +34,19 @@ function M.start_scanner(opts, state, ctx)
 		use_fd = opts.use_fd,
 		use_rg = opts.use_rg,
 		excludes = opts.excludes,
+		git_status = opts.git_status,
 	}
+
+	-- Add refresh callback for git status updates in file finder mode
+	if opts.git_status and ctx and ctx.picker then
+		scan_opts._git_refresh_callback = function()
+			vim.schedule(function()
+				if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
+					ctx.picker:refresh()
+				end
+			end)
+		end
+	end
 
 	-- Determine roots to scan
 	local scan_roots
@@ -114,8 +126,8 @@ end
 ---@return function Finder function
 function M.create_finder(opts, state)
 	return function(_, ctx)
-		-- Use picker.opts if available (for toggle functionality), fallback to original opts
-		local current_opts = (ctx and ctx.picker and ctx.picker.opts) or opts
+		-- Always use our original opts, not Snacks picker.opts
+		local current_opts = opts
 
 		-- Always rebuild scanner on (re)invoke so it follows state changes
 		if opts.use_file_finder then
@@ -130,6 +142,18 @@ function M.create_finder(opts, state)
 			return list or {}
 		else
 			local cwd = (ctx and ctx.picker and ctx.picker:cwd()) or state.roots[state.idx]
+
+			-- Add refresh callback for git status updates
+			if current_opts.git_status and ctx and ctx.picker then
+				current_opts._git_refresh_callback = function()
+					vim.schedule(function()
+						if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
+							ctx.picker:refresh()
+						end
+					end)
+				end
+			end
+
 			return M.read_directory(cwd, current_opts)
 		end
 	end

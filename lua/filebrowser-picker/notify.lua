@@ -12,10 +12,10 @@ local M = {}
 local function notify(message, level, opts)
 	opts = opts or {}
 	local title = opts.title and "[FileBrowser] " .. opts.title or "[FileBrowser]"
-	
+
 	-- Add title prefix for better identification
 	local formatted_message = title .. " " .. message
-	
+
 	if opts.timeout then
 		vim.notify(formatted_message, level, { timeout = opts.timeout })
 	else
@@ -31,7 +31,7 @@ function M.success(message, opts)
 end
 
 ---Show info notification (default styling)
----@param message string  
+---@param message string
 ---@param opts? NotifyOptions
 function M.info(message, opts)
 	notify(message, vim.log.levels.INFO, opts)
@@ -62,11 +62,16 @@ function M.operation_result(operation, success_count, total_count, errors, opts)
 		local item_word = success_count == 1 and "file" or "files"
 		M.success(string.format("%s %d %s", operation:gsub("^%l", string.upper), success_count, item_word), opts)
 	end
-	
+
 	if errors and #errors > 0 then
 		local failure_count = total_count - success_count
-		local error_message = string.format("Some %s failed (%d/%d):\n%s", 
-			operation, failure_count, total_count, table.concat(errors, "\n"))
+		local error_message = string.format(
+			"Some %s failed (%d/%d):\n%s",
+			operation,
+			failure_count,
+			total_count,
+			table.concat(errors, "\n")
+		)
 		M.error(error_message, opts)
 	elseif success_count == 0 then
 		M.error(string.format("All %s operations failed", operation), opts)
@@ -75,7 +80,7 @@ end
 
 ---Show file creation result
 ---@param created_items string[] List of created items (e.g., "file: /path", "directory: /path")
----@param opts? NotifyOptions  
+---@param opts? NotifyOptions
 function M.created(created_items, opts)
 	if #created_items > 0 then
 		local message = "Created " .. table.concat(created_items, " and ")
@@ -92,7 +97,7 @@ end
 
 ---Show path validation error
 ---@param path string Invalid path
----@param reason string Reason for invalidity  
+---@param reason string Reason for invalidity
 ---@param opts? NotifyOptions
 function M.invalid_path(path, reason, opts)
 	M.error(string.format("Invalid path '%s': %s", path, reason), opts)

@@ -11,6 +11,7 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 - 📝 **File operations**: create, rename, move, copy, delete with multi-file selection support
 - 👁️ **Hidden files toggle**
 - 🔄 **Root cycling** and smart workspace discovery
+- 📊 **Git status integration** with async status loading and caching
 
 ## Requirements
 
@@ -141,6 +142,7 @@ require("filebrowser-picker").setup({
 | Key | Action | Description |
 |-----|--------|-------------|
 | `<A-h>` | toggle_hidden | Toggle hidden files |
+| `<A-l>` | toggle_detailed_view | Toggle detailed file information (ls -l style) |
 | `<A-c>` | create_file | Create new file/directory |
 | `<A-r>` | rename | Rename selected item |
 | `<A-m>` | move | Move selected item(s) |
@@ -164,6 +166,9 @@ require("filebrowser-picker").setup({
   -- Show hidden files (default: false)
   hidden = false,
   
+  -- Show detailed file information like ls -l (default: false)
+  detailed_view = false,
+  
   -- Follow symbolic links (default: false) 
   follow_symlinks = false,
   
@@ -175,6 +180,19 @@ require("filebrowser-picker").setup({
   
   -- Show git status icons (default: true)
   git_status = true,
+  
+  -- Customize git status highlight groups
+  git_status_hl = {
+    staged = "DiagnosticHint",
+    added = "Added", 
+    deleted = "Removed",
+    ignored = "NonText",
+    modified = "DiagnosticWarn", 
+    renamed = "Special",
+    unmerged = "DiagnosticError",
+    untracked = "NonText",
+    copied = "Special",
+  },
   
   -- Enable fast file discovery across roots (auto-detected by default)
   use_file_finder = nil,  -- true for multiple roots, false for single root
@@ -207,6 +225,39 @@ require("filebrowser-picker").setup({
 ```
 
 ## Advanced Features
+
+### Git Status Integration
+
+The plugin displays git status indicators for files and directories when inside a git repository:
+
+```lua
+require("filebrowser-picker").setup({
+  git_status = true,  -- Enable git status display (default: true)
+  git_status_hl = {   -- Customize colors
+    staged = "DiagnosticHint",
+    modified = "DiagnosticWarn", 
+    untracked = "NonText",
+    -- ... more customizations
+  },
+})
+```
+
+**Features:**
+- **Async git status loading**: Non-blocking `git status --porcelain` calls
+- **Smart caching**: 15-minute TTL cache to avoid excessive git operations
+- **Right-aligned indicators**: Git status appears as colored icons on the right
+- **Repository-aware**: Automatically detects git repositories and shows relative paths
+- **Performance optimized**: Preloads git status when scanning directories
+
+**Supported status indicators:**
+- `●` Staged changes (always takes priority)
+- `○` Modified files
+- `?` Untracked files
+- `` Added files
+- `` Deleted files
+- `` Renamed files
+- `` Unmerged conflicts
+- ` ` Ignored files
 
 ### Symlink Following
 

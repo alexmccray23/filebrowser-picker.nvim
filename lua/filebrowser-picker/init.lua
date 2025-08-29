@@ -13,9 +13,11 @@ local finder = require("filebrowser-picker.finder")
 ---@field cwd? string Initial directory (default: current working directory)
 ---@field roots? string[]|string Multiple root directories to browse (default: {cwd})
 ---@field hidden? boolean Show hidden files (default: false)
+---@field detailed_view? boolean Show detailed file information like ls -l (default: false)
 ---@field follow_symlinks? boolean Follow symbolic links (default: false)
 ---@field respect_gitignore? boolean Respect .gitignore (default: true)
 ---@field git_status? boolean Show git status icons (default: true)
+---@field git_status_hl? table Git status highlight groups (default: see below)
 ---@field use_file_finder? boolean Use fast file discovery across all roots (default: false for single root, true for multiple roots)
 ---@field use_fd? boolean Enable fd for file discovery (default: true)
 ---@field use_rg? boolean Enable ripgrep for file discovery (default: true)
@@ -31,9 +33,21 @@ M.config = {
 	cwd = nil,
 	roots = nil,
 	hidden = false,
+	detailed_view = false,
 	follow_symlinks = false,
 	respect_gitignore = true,
 	git_status = true,
+	git_status_hl = {
+		staged = "DiagnosticHint",
+		added = "Added",
+		deleted = "Removed",
+		ignored = "NonText",
+		modified = "DiagnosticWarn",
+		renamed = "Special",
+		unmerged = "DiagnosticError",
+		untracked = "NonText",
+		copied = "Special",
+	},
 	use_file_finder = nil, -- Auto-detect based on roots
 	use_fd = true,
 	use_rg = true,
@@ -57,6 +71,7 @@ M.config = {
 		["="] = "goto_project_root",
 		["<C-t>"] = "set_pwd",
 		["<A-h>"] = "toggle_hidden",
+		["<A-l>"] = "toggle_detailed_view",
 		["<A-c>"] = "create_file",
 		["<A-r>"] = "rename",
 		["<A-m>"] = "move",
@@ -152,6 +167,12 @@ function M.file_browser(opts)
 
 	-- Initialize multi-root state
 	local root_list = roots.normalize_roots(opts)
+
+	-- Auto-detect use_file_finder based on number of roots
+	if opts.use_file_finder == nil then
+		opts.use_file_finder = #root_list > 1
+	end
+
 	local state = {
 		roots = root_list,
 		idx = 1,
