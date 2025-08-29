@@ -8,10 +8,10 @@ local util = require("filebrowser-picker.util")
 local SIZE_TYPES = { "", "K", "M", "G", "T", "P", "E", "Z" }
 local YEAR = os.date("%Y")
 
--- Highlight groups for different stat components
-local SIZE_HL = "Comment"
-local DATE_HL = "Comment"
-local MODE_HL = "Comment"
+-- Highlight groups for different stat components (matching telescope-file-browser.nvim)
+local SIZE_HL = "String" -- same as TelescopePreviewSize
+local DATE_HL = "Directory" -- same as TelescopePreviewDate
+local MODE_HL = "NonText" -- same as TelescopePreviewHyphen
 
 -- Size display configuration
 M.size = {
@@ -53,15 +53,15 @@ M.date = {
 	end,
 }
 
--- Permission/mode display configuration with color-coded permissions
+-- Permission/mode display configuration with telescope-file-browser.nvim highlight groups
 local color_hash = {
-	["d"] = "Directory",
-	["l"] = "MoreMsg", -- for symlinks
-	["s"] = "WarningMsg", -- for sockets
-	["r"] = "String", -- read permission
-	["w"] = "Identifier", -- write permission
-	["x"] = "Function", -- execute permission
-	["-"] = MODE_HL, -- no permission
+	["d"] = "Directory", -- same as TelescopePreviewDirectory
+	["l"] = "Special", -- same as TelescopePreviewLink
+	["s"] = "Statement", -- same as TelescopePreviewSocket
+	["r"] = "Constant", -- same as TelescopePreviewRead
+	["w"] = "Statement", -- same as TelescopePreviewWrite
+	["x"] = "String", -- same as TelescopePreviewExecute
+	["-"] = "NonText", -- same as TelescopePreviewHyphen
 }
 
 local mode_perm_map = {
@@ -93,22 +93,15 @@ M.mode = {
 		-- Use the working util.format_permissions function
 		local permissions = util.format_permissions(stat.mode)
 
-		-- Create highlights for individual permission characters
-		local highlights = {}
+		-- Create per-character highlighting - return as array of {text, hl} pairs
+		local result = {}
 		for i = 1, #permissions do
 			local char = permissions:sub(i, i)
-			local hl = color_hash[char]
-			if hl then
-				table.insert(highlights, { { i - 1, i }, hl })
-			end
+			local hl = color_hash[char] or MODE_HL
+			table.insert(result, { char, hl })
 		end
 
-		return {
-			permissions,
-			function()
-				return highlights
-			end,
-		}
+		return result
 	end,
 }
 
@@ -166,23 +159,25 @@ function M.build_stat_display(item, display_stat)
 			local stat_config = M.stat_types[stat_name]
 			local result = stat_config.display(item)
 
-			if result and result[1] then
-				local text = result[1]
-				local highlight = result[2]
+			if result then
+				-- Handle mode's special array format vs normal {text, highlight} format
+				if stat_name == "mode" and type(result[1]) == "table" then
+					-- Mode returns array of {char, hl} pairs
+					table.insert(stat_parts, result)
+				elseif result[1] then
+					-- Normal format: {text, highlight}
+					local text = result[1]
+					local highlight = result[2]
 
-				-- Apply width formatting and justification like telescope
-				if stat_config.width then
-					if stat_config.right_justify then
-						text = string.format("%" .. stat_config.width .. "s", text)
-					else
-						text = string.format("%-" .. stat_config.width .. "s", text)
+					-- Apply width formatting and justification like telescope
+					if stat_config.width then
+						if stat_config.right_justify then
+							text = string.format("%" .. stat_config.width .. "s", text)
+						else
+							text = string.format("%-" .. stat_config.width .. "s", text)
+						end
 					end
-				end
 
-				-- For mode, preserve highlight function, otherwise use simple highlight
-				if stat_name == "mode" and type(highlight) == "function" then
-					table.insert(stat_parts, { text, highlight })
-				else
 					table.insert(stat_parts, { text, highlight or "Comment" })
 				end
 			end
@@ -193,7 +188,15 @@ function M.build_stat_display(item, display_stat)
 	if #stat_parts > 0 then
 		-- Add the first component (usually mode/permissions)
 		if stat_parts[1] then
-			table.insert(components, stat_parts[1])
+			if type(stat_parts[1][1]) == "table" then
+				-- Mode's array format: add each {char, hl} pair
+				for _, char_hl in ipairs(stat_parts[1]) do
+					table.insert(components, char_hl)
+				end
+			else
+				-- Normal format: {text, highlight}
+				table.insert(components, stat_parts[1])
+			end
 		end
 
 		-- Add remaining stats with double-space separators
