@@ -195,7 +195,6 @@ function M.format_item(item, opts)
 			end
 		end
 
-		-- Add git status at the end
 		if opts.git_status then
 			local git_status = git.get_status_sync(item.file)
 			if git_status then
@@ -207,7 +206,6 @@ function M.format_item(item, opts)
 				end
 
 				if git_icon and git_icon ~= "" then
-					-- result[#result + 1] = {
 					result[1] = { (git_icon .. " "), git_hl }
 				end
 			end
@@ -220,7 +218,6 @@ function M.format_item(item, opts)
 			{ item.text, text_hl },
 		}
 
-		-- Add git status as right-aligned
 		if opts.git_status then
 			local git_status = git.get_status_sync(item.file)
 			if git_status then
@@ -232,7 +229,6 @@ function M.format_item(item, opts)
 				end
 
 				if git_icon and git_icon ~= "" then
-					-- result[#result + 1] = {
 					result[1] = { (git_icon .. " "), git_hl }
 				end
 			end

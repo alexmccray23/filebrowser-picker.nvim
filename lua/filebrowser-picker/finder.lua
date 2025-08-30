@@ -40,11 +40,9 @@ function M.start_scanner(opts, state, ctx)
 	-- Add refresh callback for git status updates in file finder mode
 	if opts.git_status and ctx and ctx.picker then
 		scan_opts._git_refresh_callback = function()
-			vim.schedule(function()
-				if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
-					ctx.picker:refresh()
-				end
-			end)
+			if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
+				ctx.picker:refresh()
+			end
 		end
 	end
 
@@ -57,37 +55,30 @@ function M.start_scanner(opts, state, ctx)
 	end
 
 	local list = {} -- items table returned to Snacks
-	local pushed = 0
 	local scan_fn = scanner.build_scanner(scan_opts, scan_roots)
 
 	local cancel = scan_fn(function(file_path)
 		local name = vim.fs.basename(file_path)
-		local uv = vim.uv or vim.loop
-		local st = uv.fs_stat(file_path)
-		list[#list + 1] = {
+		local item = {
 			file = file_path,
 			text = name,
 			dir = false,
 			hidden = name:sub(1, 1) == ".",
-			size = st and st.size or 0,
-			mtime = st and st.mtime and st.mtime.sec or 0,
+			size = 0,
+			mtime = 0,
 			type = "file",
 		}
-		pushed = pushed + 1
-		-- Batch UI updates for performance
-		if ctx and ctx.picker and (pushed % 100 == 0) then
-			vim.schedule(function()
-				if ctx.picker and not ctx.picker.closed then
-					ctx.picker:refresh()
-				end
-			end)
-		end
-	end, function()
-		-- Scan complete - trigger final refresh
-		if ctx and ctx.picker then
-			vim.schedule(function()
-				if not ctx.picker.closed then
-					ctx.picker:refresh()
+		
+		-- Add item immediately for fast display
+		list[#list + 1] = item
+		
+		-- Asynchronously get stat info if detailed view is enabled
+		if current_opts.detailed_view then
+			local uv = vim.uv or vim.loop
+			uv.fs_stat(file_path, function(err, st)
+				if not err and st then
+					item.size = st.size or 0
+					item.mtime = st.mtime and st.mtime.sec or 0
 				end
 			end)
 		end
@@ -155,11 +146,9 @@ function M.create_finder(opts, state)
 			-- Add refresh callback for git status updates
 			if current_opts.git_status and ctx and ctx.picker then
 				current_opts._git_refresh_callback = function()
-					vim.schedule(function()
-						if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
-							ctx.picker:refresh()
-						end
-					end)
+					if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
+						ctx.picker:refresh()
+					end
 				end
 			end
 
