@@ -349,12 +349,17 @@ function M.get_initial_directory(opts_cwd)
 	local current_buf = vim.api.nvim_get_current_buf()
 	local buf_name = vim.api.nvim_buf_get_name(current_buf)
 
-	-- Check if buffer has a valid file path
-	if buf_name and buf_name ~= "" and vim.fn.filereadable(buf_name) == 1 then
-		local buf_dir = vim.fn.fnamemodify(buf_name, ":p:h")
-		-- Ensure the directory exists
-		if vim.fn.isdirectory(buf_dir) == 1 then
-			return buf_dir
+	-- Check if buffer has a valid file path (async-safe)
+	if buf_name and buf_name ~= "" then
+		local uv = vim.uv or vim.loop
+		local stat = uv.fs_stat(buf_name)
+		if stat and stat.type == "file" then
+			local buf_dir = vim.fn.fnamemodify(buf_name, ":p:h")
+			-- Ensure the directory exists (async-safe)
+			local dir_stat = uv.fs_stat(buf_dir)
+			if dir_stat and dir_stat.type == "directory" then
+				return buf_dir
+			end
 		end
 	end
 

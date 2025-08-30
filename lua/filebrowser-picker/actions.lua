@@ -267,9 +267,7 @@ local function navigate_to_directory(picker, path, state, update_title)
 
 	-- Ensure directory exists
 	if not util.is_directory(path) then
-		vim.schedule(function()
-			notify.warn("Not a directory: " .. path)
-		end)
+		notify.warn("Not a directory: " .. path)
 		return false
 	end
 
@@ -442,7 +440,10 @@ function M.goto_project_root(picker)
 	-- Walk up the directory tree looking for .git
 	local function find_git_root(path)
 		while path and path ~= "/" do
-			if vim.fn.isdirectory(path .. "/.git") == 1 then
+			-- Use async-safe directory check
+			local uv = vim.uv or vim.loop
+			local stat = uv.fs_stat(path .. "/.git")
+			if stat and stat.type == "directory" then
 				return path
 			end
 			path = util.safe_dirname(path)
@@ -454,9 +455,7 @@ function M.goto_project_root(picker)
 	if git_root then
 		navigate_to_directory(picker, git_root)
 	else
-		vim.schedule(function()
-			notify.warn("No git repository found")
-		end)
+		notify.warn("No git repository found")
 	end
 end
 
