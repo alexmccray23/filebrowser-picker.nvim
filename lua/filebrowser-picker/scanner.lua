@@ -3,11 +3,15 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 
----Check if a binary is available
+---Check if a binary is available (cached for performance)
 ---@param bin string
 ---@return boolean
+local executable_cache = {}
 local function has_executable(bin)
-	return vim.fn.executable(bin) == 1
+	if executable_cache[bin] == nil then
+		executable_cache[bin] = vim.fn.executable(bin) == 1
+	end
+	return executable_cache[bin]
 end
 
 ---Spawn a process and stream output line by line
@@ -246,12 +250,21 @@ local function build_uv_scanner(opts, roots)
 				return
 			end
 
-			-- Prevent infinite loops with symlinks
-			local real_path = uv.fs_realpath(dir) or dir
-			if visited[real_path] then
+			-- Prevent infinite loops with symlinks (async)
+			uv.fs_realpath(dir, function(err, real_path)
+				real_path = real_path or dir
+				if visited[real_path] then
+					return
+				end
+				visited[real_path] = true
+				process_directory_impl(dir)
+			end)
+		end
+
+		local function process_directory_impl(dir)
+			if finished then
 				return
 			end
-			visited[real_path] = true
 
 			uv.fs_scandir(dir, function(err, handle)
 				active = active - 1
@@ -280,28 +293,29 @@ local function build_uv_scanner(opts, roots)
 						elseif type == "directory" then
 							table.insert(queue, full_path)
 						elseif type == "link" and opts.follow_symlinks then
-							-- For symlinks, check what they point to (with loop protection)
-							local real_target = uv.fs_realpath(full_path)
-							if real_target and not visited[real_target] then
-								uv.fs_stat(full_path, function(stat_err, stat)
-									if not stat_err and stat then
-										if stat.type == "file" then
-											on_item(full_path)
-										elseif stat.type == "directory" then
-											table.insert(queue, full_path)
+							-- For symlinks, check what they point to (with loop protection) - async
+							uv.fs_realpath(full_path, function(real_err, real_target)
+								if not real_err and real_target and not visited[real_target] then
+									uv.fs_stat(full_path, function(stat_err, stat)
+										if not stat_err and stat then
+											if stat.type == "file" then
+												on_item(full_path)
+											elseif stat.type == "directory" then
+												table.insert(queue, full_path)
+											end
 										end
-									end
-								end)
-							end
+									end)
+								end
+							end)
 						end
 
 						::continue::
 					end
 				end
 
-				-- Schedule next batch
+				-- Continue processing without manual scheduling
 				if not finished then
-					vim.schedule(process_next)
+					process_next()
 				end
 			end)
 		end
@@ -325,8 +339,8 @@ local function build_uv_scanner(opts, roots)
 			end
 		end
 
-		-- Start processing
-		vim.schedule(process_next)
+		-- Start processing immediately
+		process_next()
 
 		-- Return cancel function
 		return function()

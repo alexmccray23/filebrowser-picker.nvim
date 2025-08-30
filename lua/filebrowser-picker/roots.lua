@@ -21,7 +21,10 @@ function M.normalize_roots(opts)
 			local expanded_root = vim.fn.expand(root)
 			local absolute_root = vim.fn.fnamemodify(expanded_root, ":p")
 
-			if vim.fn.isdirectory(absolute_root) == 1 then
+			-- Use async-safe directory check
+			local uv = vim.uv or vim.loop
+			local stat = uv.fs_stat(absolute_root)
+			if stat and stat.type == "directory" then
 				table.insert(valid_roots, absolute_root)
 			else
 				notify.warn("Invalid root directory: " .. root .. " (expanded: " .. absolute_root .. ")")
@@ -52,20 +55,24 @@ function M.discover_roots()
 			return
 		end
 		p = vim.fs.normalize(vim.fn.fnamemodify(p, ":p"))
-		if vim.fn.isdirectory(p) == 1 and not seen[p] then
+		-- Use async-safe directory check
+		local uv = vim.uv or vim.loop
+		local stat = uv.fs_stat(p)
+		if stat and stat.type == "directory" and not seen[p] then
 			out[#out + 1] = p
 			seen[p] = true
 		end
 	end
 
-	-- Add common root candidates
+	-- Add common root candidates (cached for performance)
 	add(vim.fn.getcwd())
-	add(vim.loop.os_homedir())
+	add((vim.uv or vim.loop).os_homedir())
 
-	-- Find git root
-	local gitdir = vim.fs.find(".git", { upward = true, stop = vim.loop.os_homedir() })[1]
-	if gitdir then
-		add(vim.fs.dirname(gitdir))
+	-- Find git root (async-safe alternative)
+	local current_dir = vim.fn.getcwd()
+	local git_root = util.get_git_root(current_dir)
+	if git_root then
+		add(git_root)
 	end
 
 	-- LSP workspace folders
@@ -142,8 +149,14 @@ function M.create_actions(state, ui_select)
 			if path == nil or path == "" then
 				return
 			end
-			path = vim.fn.fnamemodify(vim.fn.expand(path), ":p")
-			if vim.fn.isdirectory(path) ~= 1 then
+			-- Expand and normalize path
+			local expanded = vim.fn.expand(path)
+			path = vim.fn.fnamemodify(expanded, ":p")
+			
+			-- Check if directory exists
+			local uv = vim.uv or vim.loop
+			local stat = uv.fs_stat(path)
+			if not stat or stat.type ~= "directory" then
 				notify.warn("Not a directory: " .. path)
 				return
 			end

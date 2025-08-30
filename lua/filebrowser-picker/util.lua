@@ -310,9 +310,20 @@ function M.get_git_root(dir)
 		return cached.root
 	end
 
-	-- Delegate to git module's walk-up implementation (no shell)
-	local git_mod = require("filebrowser-picker.git")
-	local git_root = git_mod.get_git_root(dir)
+	-- Walk up directory tree to find git root (async-safe)
+	local uv = vim.uv or vim.loop
+	local current = dir
+	local git_root = nil
+	
+	while current ~= "/" do
+		local git_dir = current .. "/.git"
+		local stat = uv.fs_stat(git_dir)
+		if stat then
+			git_root = current
+			break
+		end
+		current = current:match("^(.+)/[^/]*$") or "/"
+	end
 
 	-- Cache result (including nil)
 	git_root_cache[dir] = { root = git_root, timestamp = now }
