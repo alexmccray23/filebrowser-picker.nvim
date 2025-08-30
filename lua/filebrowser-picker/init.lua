@@ -122,12 +122,43 @@ function M.setup_netrw_replacement()
 
 	local group = vim.api.nvim_create_augroup("filebrowser-picker.netrw", { clear = true })
 
+	-- local function handle_directory_buffer(ev)
+	-- 	if ev.file ~= "" then
+	-- 		-- Use async-safe directory check
+	-- 		local uv = vim.uv or vim.loop
+	-- 		local stat = uv.fs_stat(ev.file)
+	-- 		if stat and stat.type == "directory" then
+	-- 			-- Open file browser with the directory - don't schedule, handle directly
+	-- 			M.file_browser({
+	-- 				cwd = ev.file,
+	-- 				follow_symlinks = M.config.follow_symlinks,
+	-- 			})
+	--
+	-- 			if vim.v.vim_did_enter == 0 then
+	-- 				-- Before vim enters, clear buffer name so we don't try loading this one again
+	-- 				vim.api.nvim_buf_set_name(ev.buf, "")
+	-- 			else
+	-- 				-- After vim has entered, delete the directory buffer using proper method
+	-- 				local ok, Snacks = pcall(require, "snacks")
+	-- 				if ok and Snacks.bufdelete then
+	-- 					-- Use snacks bufdelete to maintain window layout
+	-- 					Snacks.bufdelete.delete(ev.buf)
+	-- 				else
+	-- 					-- Fallback to manual deletion with delay
+	-- 					vim.defer_fn(function()
+	-- 						if vim.api.nvim_buf_is_valid(ev.buf) then
+	-- 							pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
+	-- 						end
+	-- 					end, 10)
+	-- 				end
+	-- 			end
+	-- 		end
+	-- 	end
+	-- end
 	local function handle_directory_buffer(ev)
 		if ev.file ~= "" then
-			-- Use async-safe directory check
-			local uv = vim.uv or vim.loop
-			local stat = uv.fs_stat(ev.file)
-			if stat and stat.type == "directory" then
+			-- Use a synchronous directory check
+			if vim.fn.isdirectory(ev.file) == 1 then
 				-- Open file browser with the directory - don't schedule, handle directly
 				M.file_browser({
 					cwd = ev.file,
