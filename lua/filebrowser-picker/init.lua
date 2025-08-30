@@ -122,52 +122,36 @@ function M.setup_netrw_replacement()
 
 	local group = vim.api.nvim_create_augroup("filebrowser-picker.netrw", { clear = true })
 
-	-- local function handle_directory_buffer(ev)
-	-- 	if ev.file ~= "" then
-	-- 		-- Use async-safe directory check
-	-- 		local uv = vim.uv or vim.loop
-	-- 		local stat = uv.fs_stat(ev.file)
-	-- 		if stat and stat.type == "directory" then
-	-- 			-- Open file browser with the directory - don't schedule, handle directly
-	-- 			M.file_browser({
-	-- 				cwd = ev.file,
-	-- 				follow_symlinks = M.config.follow_symlinks,
-	-- 			})
-	--
-	-- 			if vim.v.vim_did_enter == 0 then
-	-- 				-- Before vim enters, clear buffer name so we don't try loading this one again
-	-- 				vim.api.nvim_buf_set_name(ev.buf, "")
-	-- 			else
-	-- 				-- After vim has entered, delete the directory buffer using proper method
-	-- 				local ok, Snacks = pcall(require, "snacks")
-	-- 				if ok and Snacks.bufdelete then
-	-- 					-- Use snacks bufdelete to maintain window layout
-	-- 					Snacks.bufdelete.delete(ev.buf)
-	-- 				else
-	-- 					-- Fallback to manual deletion with delay
-	-- 					vim.defer_fn(function()
-	-- 						if vim.api.nvim_buf_is_valid(ev.buf) then
-	-- 							pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
-	-- 						end
-	-- 					end, 10)
-	-- 				end
-	-- 			end
-	-- 		end
-	-- 	end
-	-- end
 	local function handle_directory_buffer(ev)
-		if ev.file ~= "" and vim.fn.isdirectory(ev.file) == 1 then
-			-- Schedule the file browser to open in the next event loop cycle
-			vim.schedule(function()
+		if ev.file ~= "" then
+			-- Use async-safe directory check
+			local uv = vim.uv or vim.loop
+			local stat = uv.fs_stat(ev.file)
+			if stat and stat.type == "directory" then
+				-- Open file browser with the directory - don't schedule, handle directly
 				M.file_browser({
 					cwd = ev.file,
 					follow_symlinks = M.config.follow_symlinks,
 				})
-			end)
 
-			-- Immediately hide the directory buffer to prevent it from being displayed
-			if vim.api.nvim_buf_is_valid(ev.buf) then
-				vim.api.nvim_buf_set_option(ev.buf, "bufhidden", "wipe")
+				if vim.v.vim_did_enter == 0 then
+					-- Before vim enters, clear buffer name so we don't try loading this one again
+					vim.api.nvim_buf_set_name(ev.buf, "")
+				else
+					-- After vim has entered, delete the directory buffer using proper method
+					local ok, Snacks = pcall(require, "snacks")
+					if ok and Snacks.bufdelete then
+						-- Use snacks bufdelete to maintain window layout
+						Snacks.bufdelete.delete(ev.buf)
+					else
+						-- Fallback to manual deletion with delay
+						vim.defer_fn(function()
+							if vim.api.nvim_buf_is_valid(ev.buf) then
+								pcall(vim.api.nvim_buf_delete, ev.buf, { force = true })
+							end
+						end, 10)
+					end
+				end
 			end
 		end
 	end
@@ -204,7 +188,7 @@ function M.file_browser(opts)
 
 	-- Auto-detect use_file_finder based on number of roots
 	if opts.use_file_finder == nil then
-		opts.use_file_finder = #roots > 1
+		opts.use_file_finder = #root_list > 1
 	end
 
 	local state = {
@@ -257,8 +241,6 @@ function M.file_browser(opts)
 
 	-- Store opts on the picker for actions to access
 	local picker_opts = {
-		-- Add this line to give the picker a unique source
-		source = "filebrowser-picker",
 		cwd = initial_cwd,
 		title = roots.title_for(state.idx, state.roots, initial_cwd),
 		opts = opts, -- Store the options for actions to access
@@ -301,114 +283,6 @@ function M.file_browser(opts)
 
 	Snacks.picker.pick(picker_opts)
 end
--- function M.file_browser(opts)
--- 	opts = vim.tbl_deep_extend("force", M.config, opts or {})
---
--- 	local ok, Snacks = pcall(require, "snacks")
--- 	if not ok then
--- 		error("filebrowser-picker.nvim requires snacks.nvim")
--- 	end
---
--- 	-- Initialize multi-root state
--- 	local root_list = roots.normalize_roots(opts)
---
--- 	-- Auto-detect use_file_finder based on number of roots
--- 	if opts.use_file_finder == nil then
--- 		opts.use_file_finder = #root_list > 1
--- 	end
---
--- 	local state = {
--- 		roots = root_list,
--- 		idx = 1,
--- 		prev_dir = nil,
--- 	}
---
--- 	-- Helper to get current active root
--- 	local function active_root()
--- 		return state.roots[state.idx]
--- 	end
---
--- 	-- Create root management actions
--- 	local root_actions = roots.create_actions(state, finder.ui_select)
---
--- 	-- Create actions that need state access
--- 	local state_aware_actions = {
--- 		confirm = function(picker, item)
--- 			actions.confirm_with_state(picker, item, state)
--- 		end,
--- 		goto_parent = function(picker)
--- 			actions.goto_parent_with_state(picker, state)
--- 			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
--- 			picker:update_titles()
--- 		end,
--- 		goto_home = function(picker)
--- 			actions.goto_home_with_state(picker, state)
--- 			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
--- 			picker:update_titles()
--- 		end,
--- 		goto_cwd = function(picker)
--- 			actions.goto_cwd_with_state(picker, state)
--- 			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
--- 			picker:update_titles()
--- 		end,
--- 		goto_previous_dir = function(picker)
--- 			actions.goto_previous_dir_with_state(picker, state)
--- 			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
--- 			picker:update_titles()
--- 		end,
--- 		goto_project_root = function(picker)
--- 			actions.goto_project_root_with_state(picker, state)
--- 			picker.title = roots.title_for(state.idx, state.roots, picker:cwd())
--- 			picker:update_titles()
--- 		end,
--- 	}
---
--- 	local initial_cwd = active_root()
---
--- 	-- Store opts on the picker for actions to access
--- 	local picker_opts = {
--- 		cwd = initial_cwd,
--- 		title = roots.title_for(state.idx, state.roots, initial_cwd),
--- 		opts = opts, -- Store the options for actions to access
---
--- 		finder = finder.create_finder(opts, state),
--- 		format = finder.create_format_function(opts),
---
--- 		actions = vim.tbl_extend("force", actions.get_actions(), root_actions, state_aware_actions),
---
--- 		layout = opts.dynamic_layout and {
--- 			cycle = true,
--- 			preset = function()
--- 				return vim.o.columns >= (opts.layout_width_threshold or 120) and "default" or "vertical"
--- 			end,
--- 		} or { preset = "default" },
---
--- 		win = {
--- 			input = {
--- 				keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
--- 					["gr"] = "root_add_here",
--- 					["gR"] = "root_add_path",
--- 					["<leader>wr"] = "root_pick_suggested",
--- 					["<leader>wR"] = "root_remove",
--- 					["<C-p>"] = "cycle_roots_prev",
--- 				})),
--- 			},
--- 			list = {
--- 				keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
--- 					["gr"] = "root_add_here",
--- 					["gR"] = "root_add_path",
--- 					["<leader>wr"] = "root_pick_suggested",
--- 					["<leader>wR"] = "root_remove",
--- 					["<C-p>"] = "cycle_roots_prev",
--- 				})),
--- 			},
--- 		},
---
--- 		on_close = finder.create_cleanup_function(),
--- 	}
---
--- 	Snacks.picker.pick(picker_opts)
--- end
 
 ---Enable netrw replacement (can be called without setup)
 function M.replace_netrw()
