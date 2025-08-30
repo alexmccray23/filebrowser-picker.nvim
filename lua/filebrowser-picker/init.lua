@@ -204,7 +204,7 @@ function M.file_browser(opts)
 
 	-- Auto-detect use_file_finder based on number of roots
 	if opts.use_file_finder == nil then
-		opts.use_file_finder = #root_list > 1
+		opts.use_file_finder = true
 	end
 
 	local state = {
