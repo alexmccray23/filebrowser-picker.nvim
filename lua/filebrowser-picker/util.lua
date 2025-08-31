@@ -253,11 +253,16 @@ function M.scan_directory(dir, opts)
 		local stat = uv.fs_stat(path)
 		if stat then
 			-- Determine if this is a directory, considering symlinks
-			local is_dir = type == "directory"
+			-- For sshfs/network filesystems, uv.fs_scandir_next() type may be unreliable,
+			-- so also check stat.type as fallback
+			local is_dir = type == "directory" or stat.type == "directory"
 			if not is_dir and type == "link" and opts.follow_symlinks then
 				-- For symlinks, check what they actually point to
 				is_dir = stat.type == "directory"
 			end
+
+			-- Use stat.type as primary source of truth, with scandir type as fallback
+			local actual_type = stat.type or type or "file"
 
 			table.insert(items, {
 				file = path,
@@ -266,7 +271,7 @@ function M.scan_directory(dir, opts)
 				hidden = hidden,
 				size = stat.size or 0,
 				mtime = stat.mtime.sec or 0,
-				type = type or "file",
+				type = actual_type,
 				mode = stat.mode,
 			})
 		end
