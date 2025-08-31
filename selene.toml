@@ -1,0 +1,18 @@
+# selene configuration for filebrowser-picker.nvim
+
+std = "lua51+vim"
+
+[rules]
+# Enable most linting rules
+unused_variable = "warn"
+unscoped_variables = "warn" 
+undefined_variable = "warn"
+shadowing = "allow"  # Allow shadowing for local variables
+incorrect_standard_library_use = "warn"
+duplicate_keys = "warn"
+empty_if = "warn"
+if_same_then_else = "warn"
+mismatched_arg_count = "allow"  # Allow for flexible callback patterns
+mixed_table = "allow"  # Allow mixed tables common in Neovim configs
+multiple_statements = "allow"  # Allow multiple statements on one line for simple cases
+global_usage = "warn"

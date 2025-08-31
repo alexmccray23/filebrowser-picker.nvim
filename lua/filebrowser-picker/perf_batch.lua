@@ -11,14 +11,14 @@ local function make_smart_debounced_refresh(picker, base_delay_ms)
   local closed = false
   local item_count = 0
   local last_update = uv.hrtime()
-  
+
   -- Auto-tuning parameters
   local min_delay = base_delay_ms or 16
   local max_delay = 200
   local batch_thresholds = {
     small = { max_items = 100, batch_size = 25, delay = min_delay },
     medium = { max_items = 1000, batch_size = 100, delay = min_delay * 2 },
-    large = { max_items = math.huge, batch_size = 200, delay = min_delay * 4 }
+    large = { max_items = math.huge, batch_size = 200, delay = min_delay * 4 },
   }
   local current_batch_size = batch_thresholds.small.batch_size
   local current_delay = min_delay
@@ -47,27 +47,35 @@ local function make_smart_debounced_refresh(picker, base_delay_ms)
   end
 
   local function fire()
-    if closed or not picker or picker.closed then return end
+    if closed or not picker or picker.closed then
+      return
+    end
     pending = false
     last_update = uv.hrtime()
     -- pcall to avoid noisy errors if picker is closing
-    pcall(function() picker:refresh() end)
+    pcall(function()
+      picker:refresh()
+    end)
   end
 
   local function schedule(new_item_count)
-    if closed or not picker or picker.closed then return end
-    if not timer then return end
-    
+    if closed or not picker or picker.closed then
+      return
+    end
+    if not timer then
+      return
+    end
+
     -- Update item count for auto-tuning
     if new_item_count then
       item_count = new_item_count
       auto_tune()
     end
-    
+
     -- Only schedule if we don't have a pending refresh or if enough time has passed
     local now = uv.hrtime()
     local time_since_update = (now - last_update) / 1000000 -- Convert to ms
-    
+
     if not pending and time_since_update >= current_delay then
       -- Immediate refresh for small changes
       fire()
@@ -78,13 +86,17 @@ local function make_smart_debounced_refresh(picker, base_delay_ms)
     end
   end
 
-  return schedule, stop, function() return current_batch_size, current_delay end
+  return schedule, stop, function()
+    return current_batch_size, current_delay
+  end
 end
 
 -- Legacy simple debounced refresh for backward compatibility
 local function make_debounced_refresh(picker, min_delay_ms)
   local schedule, stop = make_smart_debounced_refresh(picker, min_delay_ms)
-  return function() schedule() end, stop
+  return function()
+    schedule()
+  end, stop
 end
 
 -- Wrap the growing `list` with a metatable that detects appends
@@ -92,9 +104,15 @@ local function wrap_list_with_refresh(list, on_append)
   local proxy = {}
   local mt = {
     __index = list,
-    __len = function() return #list end,
-    __pairs = function() return pairs(list) end,
-    __ipairs = function() return ipairs(list) end,
+    __len = function()
+      return #list
+    end,
+    __pairs = function()
+      return pairs(list)
+    end,
+    __ipairs = function()
+      return ipairs(list)
+    end,
     __newindex = function(_, k, v)
       -- Forward the write
       list[k] = v
@@ -109,7 +127,7 @@ end
 
 function M.install(opts)
   opts = opts or {}
-  local refresh_ms = tonumber(opts.refresh_ms) or 16  -- ~60fps
+  local refresh_ms = tonumber(opts.refresh_ms) or 16 -- ~60fps
 
   local ok, finder = pcall(require, "filebrowser-picker.finder")
   if not ok or type(finder.start_scanner) ~= "function" then
@@ -157,4 +175,3 @@ function M.install(opts)
 end
 
 return M
-

@@ -1,7 +1,7 @@
 ---@class filebrowser-picker.config
 local M = {}
 
-local util = require("filebrowser-picker.util")
+local util = require "filebrowser-picker.util"
 
 ---@class FileBrowserPicker.Config
 ---@field cwd? string Initial directory (default: current working directory)
@@ -46,79 +46,79 @@ local util = require("filebrowser-picker.util")
 ---Default configuration
 ---@type FileBrowserPicker.Config
 M.defaults = {
-	cwd = nil,
-	roots = nil,
-	hidden = false,
-	detailed_view = false,
-	display_stat = {
-		mode = true,
-		size = true,
-		date = true,
-	},
-	size_format = "auto",
-	date_format = "%b %d %H:%M",
-	sort_by = "name",
-	sort_reverse = false,
-	follow_symlinks = false,
-	respect_gitignore = true,
-	git_status = true,
-	git_status_hl = {
-		staged = "DiagnosticHint",
-		added = "Added",
-		deleted = "Removed",
-		ignored = "NonText",
-		modified = "DiagnosticWarn",
-		renamed = "Special",
-		unmerged = "DiagnosticError",
-		untracked = "NonText",
-		copied = "Special",
-	},
-	use_file_finder = nil, -- Auto-detect based on roots
-	use_fd = true,
-	use_rg = true,
-	excludes = {},
-	extra_fd_args = {},
-	extra_rg_args = {},
-	dynamic_layout = true,
-	layout_width_threshold = 120,
-	replace_netrw = false,
-	hijack_netrw = false,
-	use_trash = true,
-	confirm_rm = "always",
-	resume_last = false,
-	history_file = vim.fn.stdpath("data") .. "/filebrowser-picker/history",
-	performance = {
-		ui_optimizations = false,
-		refresh_batching = false,
-		refresh_rate_ms = 16,
-	},
-	icons = util.get_default_icons(),
-	keymaps = {
-		["<CR>"] = "confirm",
-		["<C-v>"] = "edit_vsplit",
-		["<C-x>"] = "edit_split",
-		["<A-t>"] = "edit_tab",
-		["<bs>"] = "conditional_backspace",
-		["<C-g>"] = "goto_parent",
-		["<C-e>"] = "goto_home",
-		["<C-r>"] = "goto_cwd",
-		["<C-n>"] = "cycle_roots",
-		["~"] = "goto_home",
-		["-"] = "goto_previous_dir",
-		["="] = "goto_project_root",
-		["<C-t>"] = "set_pwd",
-		["<A-h>"] = "toggle_hidden",
-		["<A-l>"] = "toggle_detailed_view",
-		["<A-s>"] = "toggle_sort_by",
-		["<A-S>"] = "toggle_sort_reverse",
-		["<A-f>"] = "toggle_size_format",
-		["<A-c>"] = "create_file",
-		["<A-r>"] = "rename",
-		["<A-v>"] = "move",
-		["<A-y>"] = "yank",
-		["<A-p>"] = "paste",
-		["<A-d>"] = "delete",
-	},
+  cwd = nil,
+  roots = nil,
+  hidden = false,
+  detailed_view = false,
+  display_stat = {
+    mode = true,
+    size = true,
+    date = true,
+  },
+  size_format = "auto",
+  date_format = "%b %d %H:%M",
+  sort_by = "name",
+  sort_reverse = false,
+  follow_symlinks = false,
+  respect_gitignore = true,
+  git_status = true,
+  git_status_hl = {
+    staged = "DiagnosticHint",
+    added = "Added",
+    deleted = "Removed",
+    ignored = "NonText",
+    modified = "DiagnosticWarn",
+    renamed = "Special",
+    unmerged = "DiagnosticError",
+    untracked = "NonText",
+    copied = "Special",
+  },
+  use_file_finder = nil, -- Auto-detect based on roots
+  use_fd = true,
+  use_rg = true,
+  excludes = {},
+  extra_fd_args = {},
+  extra_rg_args = {},
+  dynamic_layout = true,
+  layout_width_threshold = 120,
+  replace_netrw = false,
+  hijack_netrw = false,
+  use_trash = true,
+  confirm_rm = "always",
+  resume_last = false,
+  history_file = vim.fn.stdpath "data" .. "/filebrowser-picker/history",
+  performance = {
+    ui_optimizations = false,
+    refresh_batching = false,
+    refresh_rate_ms = 16,
+  },
+  icons = util.get_default_icons(),
+  keymaps = {
+    ["<CR>"] = "confirm",
+    ["<C-v>"] = "edit_vsplit",
+    ["<C-x>"] = "edit_split",
+    ["<A-t>"] = "edit_tab",
+    ["<bs>"] = "conditional_backspace",
+    ["<C-g>"] = "goto_parent",
+    ["<C-e>"] = "goto_home",
+    ["<C-r>"] = "goto_cwd",
+    ["<C-n>"] = "cycle_roots",
+    ["~"] = "goto_home",
+    ["-"] = "goto_previous_dir",
+    ["="] = "goto_project_root",
+    ["<C-t>"] = "set_pwd",
+    ["<A-h>"] = "toggle_hidden",
+    ["<A-l>"] = "toggle_detailed_view",
+    ["<A-s>"] = "toggle_sort_by",
+    ["<A-S>"] = "toggle_sort_reverse",
+    ["<A-f>"] = "toggle_size_format",
+    ["<A-c>"] = "create_file",
+    ["<A-r>"] = "rename",
+    ["<A-v>"] = "move",
+    ["<A-y>"] = "yank",
+    ["<A-p>"] = "paste",
+    ["<A-d>"] = "delete",
+  },
 }
 
 ---Current configuration (merged defaults + user config)
@@ -129,58 +129,58 @@ M.current = vim.deepcopy(M.defaults)
 ---@param user_opts? FileBrowserPicker.Config User configuration
 ---@return FileBrowserPicker.Config merged_config
 function M.setup(user_opts)
-	-- Deep merge user config with defaults
-	M.current = vim.tbl_deep_extend("force", M.defaults, user_opts or {})
+  -- Deep merge user config with defaults
+  M.current = vim.tbl_deep_extend("force", M.defaults, user_opts or {})
 
-	-- Handle hijack_netrw alias for telescope-file-browser compatibility
-	if M.current.hijack_netrw ~= nil and M.current.replace_netrw == false then
-		M.current.replace_netrw = M.current.hijack_netrw
-	end
+  -- Handle hijack_netrw alias for telescope-file-browser compatibility
+  if M.current.hijack_netrw ~= nil and M.current.replace_netrw == false then
+    M.current.replace_netrw = M.current.hijack_netrw
+  end
 
-	return M.current
+  return M.current
 end
 
 ---Get current configuration
 ---@return FileBrowserPicker.Config
 function M.get()
-	return M.current
+  return M.current
 end
 
 ---Update configuration at runtime
 ---@param key string Configuration key (supports dot notation like "performance.ui_optimizations")
 ---@param value any New value
 function M.set(key, value)
-	local keys = vim.split(key, ".", { plain = true })
-	local current = M.current
-	
-	-- Navigate to parent table
-	for i = 1, #keys - 1 do
-		local k = keys[i]
-		if not current[k] then
-			current[k] = {}
-		end
-		current = current[k]
-	end
-	
-	-- Set final value
-	current[keys[#keys]] = value
+  local keys = vim.split(key, ".", { plain = true })
+  local current = M.current
+
+  -- Navigate to parent table
+  for i = 1, #keys - 1 do
+    local k = keys[i]
+    if not current[k] then
+      current[k] = {}
+    end
+    current = current[k]
+  end
+
+  -- Set final value
+  current[keys[#keys]] = value
 end
 
 ---Get configuration value
 ---@param key string Configuration key (supports dot notation)
 ---@return any value
 function M.get_value(key)
-	local keys = vim.split(key, ".", { plain = true })
-	local current = M.current
-	
-	for _, k in ipairs(keys) do
-		if type(current) ~= "table" or current[k] == nil then
-			return nil
-		end
-		current = current[k]
-	end
-	
-	return current
+  local keys = vim.split(key, ".", { plain = true })
+  local current = M.current
+
+  for _, k in ipairs(keys) do
+    if type(current) ~= "table" or current[k] == nil then
+      return nil
+    end
+    current = current[k]
+  end
+
+  return current
 end
 
 return M

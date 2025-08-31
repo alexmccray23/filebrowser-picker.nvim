@@ -8,7 +8,7 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 - 📁 **Persistent directory navigation** like telescope-file-browser
 - 🌳 **Multi-root support** with dynamic workspace management
 - ⚡ **High-performance file discovery** using fd, ripgrep, or fallback scanning
-- 📝 **File operations**: create, rename, move, copy, delete with multi-file selection support
+- 📝 **Cross-platform file operations**: create, rename, move, copy, delete using libuv with multi-file selection support
 - 🛡️ **Safe deletion** with trash support and configurable confirmation levels
 - 👁️ **Hidden files toggle**
 - 🔄 **Root cycling** and smart workspace discovery
@@ -16,6 +16,7 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 - 🔧 **Netrw replacement** with telescope-file-browser compatibility (`hijack_netrw`)
 - ⚡ **Performance optimizations** with optional UI and refresh batching modules
 - 🔌 **Extensible API** with composable functions for custom workflows
+- 📊 **Performance profiling** with built-in scanner benchmarking command
 
 ## Requirements
 
@@ -634,6 +635,44 @@ require("filebrowser-picker").setup({
   -- ... other options work similarly
 })
 ```
+
+## Commands
+
+filebrowser-picker.nvim provides the following user commands:
+
+- `:FileBrowser [path]` - Open file browser (optionally at specific path)
+- `:FileBrowserPickerProfile [path]` - Profile scanner performance for the given directory (or current directory)
+
+### Performance Profiling
+
+Use `:FileBrowserPickerProfile` to benchmark scanner performance and get optimization recommendations:
+
+```vim
+:FileBrowserPickerProfile ~/large-project
+```
+
+This will test fd, ripgrep, and uv scanners, showing:
+- Execution time for each scanner
+- File counts discovered
+- Files per second processed
+- Recommendations for optimal scanner selection
+
+## Development & Tooling
+
+The project includes comprehensive tooling for development:
+
+### Static Analysis
+
+- **StyLua**: Code formatting with `stylua.toml` configuration
+- **Selene**: Lua linting with `selene.toml` configuration
+- **GitHub Actions**: Automated CI running `stylua --check` and selene linting
+
+### Cross-Platform File Operations
+
+All file operations (move, copy, delete) use libuv for cross-platform reliability:
+- `uv.fs_rename()` for file moves (instead of `os.rename`)
+- `uv.fs_copyfile()` for file copying
+- Recursive directory copying with proper error handling
 
 ## Acknowledgments
 
