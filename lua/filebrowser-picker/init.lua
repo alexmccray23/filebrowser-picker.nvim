@@ -31,6 +31,10 @@ local finder = require("filebrowser-picker.finder")
 ---@field dynamic_layout? boolean Use dynamic layout switching based on window width (default: true)
 ---@field layout_width_threshold? number Minimum width for default layout, switches to vertical below this (default: 120)
 ---@field replace_netrw? boolean Replace netrw with the file browser (default: false)
+---@field performance? table Performance optimization options
+---@field performance.ui_optimizations? boolean Enable UI performance optimizations (icon caching, formatting) (default: false)
+---@field performance.refresh_batching? boolean Enable refresh batching for file finder mode (default: false)
+---@field performance.refresh_rate_ms? number Refresh rate for batching in milliseconds (default: 16)
 
 ---@type FileBrowserPicker.Config
 M.config = {
@@ -64,6 +68,11 @@ M.config = {
 	dynamic_layout = true,
 	layout_width_threshold = 120,
 	replace_netrw = false,
+	performance = {
+		ui_optimizations = false,
+		refresh_batching = false,
+		refresh_rate_ms = 16,
+	},
 	icons = util.get_default_icons(),
 	keymaps = {
 		["<CR>"] = "confirm",
@@ -97,6 +106,29 @@ M.actions = actions
 ---@param opts? FileBrowserPicker.Config
 function M.setup(opts)
 	M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+	-- Enable performance optimizations if requested
+	if M.config.performance then
+		if M.config.performance.ui_optimizations then
+			local ok, perf = pcall(require, "filebrowser-picker.perf")
+			if ok then
+				perf.install()
+			else
+				vim.notify("filebrowser-picker: Failed to load performance module", vim.log.levels.WARN)
+			end
+		end
+
+		if M.config.performance.refresh_batching then
+			local ok, perf_batch = pcall(require, "filebrowser-picker.perf_batch")
+			if ok then
+				perf_batch.install({
+					refresh_ms = M.config.performance.refresh_rate_ms or 16
+				})
+			else
+				vim.notify("filebrowser-picker: Failed to load refresh batching module", vim.log.levels.WARN)
+			end
+		end
+	end
 
 	-- Replace netrw with file browser if requested
 	if M.config.replace_netrw then
