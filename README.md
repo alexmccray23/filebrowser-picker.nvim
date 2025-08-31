@@ -9,11 +9,13 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 - 🌳 **Multi-root support** with dynamic workspace management
 - ⚡ **High-performance file discovery** using fd, ripgrep, or fallback scanning
 - 📝 **File operations**: create, rename, move, copy, delete with multi-file selection support
+- 🛡️ **Safe deletion** with trash support and configurable confirmation levels
 - 👁️ **Hidden files toggle**
 - 🔄 **Root cycling** and smart workspace discovery
-- 📊 **Git status integration** with async status loading and caching
-- 🔧 **Netrw replacement** with proper focus and navigation handling
+- 📊 **Git status integration** with async status loading and intelligent caching
+- 🔧 **Netrw replacement** with telescope-file-browser compatibility (`hijack_netrw`)
 - ⚡ **Performance optimizations** with optional UI and refresh batching modules
+- 🔌 **Extensible API** with composable functions for custom workflows
 
 ## Requirements
 
@@ -29,6 +31,10 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 **For optimal performance:**
 - [`fd`](https://github.com/sharkdp/fd) _(fastest file discovery)_
 - [`ripgrep`](https://github.com/BurntSushi/ripgrep) _(fallback file discovery)_
+
+**For safe deletion:**
+- [`trash-cli`](https://github.com/andreafrancia/trash-cli) _(Linux)_
+- `trash` _(macOS, built-in)_
 
 ## Installation
 
@@ -73,6 +79,9 @@ require("filebrowser-picker").file_browser({
   cwd = vim.fn.expand("~/projects"),
   hidden = true,
 })
+
+-- Composable API for custom workflows
+require("filebrowser-picker").open_at("~/dotfiles")
 ```
 
 ### Multi-Root Usage
@@ -100,6 +109,14 @@ require("filebrowser-picker").setup({
   respect_gitignore = true,
   roots = { "~/projects", "~/work" },  -- Default roots
   use_fd = true,  -- Prefer fd over ripgrep
+  
+  -- Safety features
+  use_trash = true,       -- Use trash for deletions (default: true)
+  confirm_rm = "always",  -- "always", "multi", or "never"
+  
+  -- Telescope-file-browser compatibility
+  hijack_netrw = false,   -- Alternative to replace_netrw
+  
   keymaps = {
     ["<CR>"] = "confirm",
     ["<C-g>"] = "goto_parent", 
@@ -155,7 +172,7 @@ require("filebrowser-picker").setup({
 | `<A-v>` | move | Move selected item(s) |
 | `<A-y>` | yank | Yank (copy to register) selected items |
 | `<A-p>` | paste | Paste files from register |
-| `<A-d>` | delete | Delete selected item |
+| `<A-d>` | delete | Delete selected item (with trash support) |
 
 **Multi-file Operations**: Use visual selection or `<Tab>` to select multiple files, then use move/yank/paste/delete operations on the entire selection.
 
@@ -188,6 +205,13 @@ require("filebrowser-picker").setup({
   
   -- Replace netrw with file browser for all directory operations (default: false)
   replace_netrw = false,
+  
+  -- Telescope-file-browser compatibility alias (default: false)
+  hijack_netrw = false,
+  
+  -- Safe deletion options
+  use_trash = true,        -- Use trash command when available (default: true)
+  confirm_rm = "always",   -- "always", "multi" (>1 files), or "never" (default: "always")
   
   -- Respect .gitignore (default: true)
   respect_gitignore = true,
@@ -247,9 +271,27 @@ require("filebrowser-picker").setup({
 
 ## Advanced Features
 
+### Safe Deletion with Trash Support
+
+The plugin provides safe deletion with trash integration and configurable confirmation:
+
+```lua
+require("filebrowser-picker").setup({
+  use_trash = true,         -- Use trash command when available (default)
+  confirm_rm = "always",    -- Confirmation level: "always", "multi", "never"
+})
+```
+
+**Features:**
+- **Trash integration**: Automatically detects `trash-put`, `trash`, `gtrash`, or `rmtrash`
+- **Fallback safety**: Falls back to permanent deletion with clear warnings
+- **Smart confirmation**: Different prompts for files vs directories with contents
+- **Multi-file support**: Handles bulk operations with appropriate confirmations
+- **Recursive handling**: Special prompts for directories containing files
+
 ### Git Status Integration
 
-The plugin displays git status indicators for files and directories when inside a git repository:
+The plugin displays git status indicators with intelligent caching:
 
 ```lua
 require("filebrowser-picker").setup({
@@ -264,11 +306,11 @@ require("filebrowser-picker").setup({
 ```
 
 **Features:**
-- **Async git status loading**: Non-blocking `git status --porcelain` calls
-- **Smart caching**: 15-minute TTL cache to avoid excessive git operations
-- **Right-aligned indicators**: Git status appears as colored icons on the right
-- **Repository-aware**: Automatically detects git repositories and shows relative paths
+- **Async git status loading**: Non-blocking `git status --porcelain=v1 -z` calls
+- **Intelligent caching**: TTL cache with `.git/index` mtime invalidation
+- **Repository-aware**: Uses realpath normalization for consistent cache keys
 - **Performance optimized**: Preloads git status when scanning directories
+- **Priority-based display**: Staged changes always take precedence
 
 **Supported status indicators:**
 - `●` Staged changes (always takes priority)
@@ -303,11 +345,15 @@ Replace Neovim's built-in netrw file explorer completely:
 ```lua
 require("filebrowser-picker").setup({
   replace_netrw = true,     -- Replace netrw with file browser
+  -- OR for telescope-file-browser compatibility:
+  hijack_netrw = true,      -- Same functionality, different name
   follow_symlinks = true,   -- Recommended when replacing netrw
 })
 
 -- Or enable directly without full setup
 require("filebrowser-picker").replace_netrw()
+-- OR using telescope-file-browser compatible API:
+require("filebrowser-picker").hijack_netrw()
 ```
 
 **Features:**
@@ -418,6 +464,54 @@ vim.keymap.set("n", "<leader>fw", function()
     use_file_finder = true,
   })
 end, { desc = "File Browser (Workspaces)" })
+```
+
+## API Reference
+
+The plugin provides a composable API for advanced usage:
+
+```lua
+local fb = require("filebrowser-picker")
+
+-- Core functions
+fb.file_browser(opts)           -- Main file browser function
+fb.open_at(path, opts)          -- Open at specific directory
+fb.setup(opts)                  -- Configure plugin
+
+-- Configuration management
+fb.toggle_hidden(show)          -- Toggle hidden files globally
+
+-- Netrw replacement
+fb.replace_netrw()              -- Enable netrw replacement
+fb.hijack_netrw()               -- Telescope-file-browser compatible alias
+
+-- Module access
+fb.actions                      -- Access to all picker actions
+fb.config                       -- Current configuration
+```
+
+### Migration from telescope-file-browser.nvim
+
+Most telescope-file-browser configurations work with minimal changes:
+
+```lua
+-- Before (telescope-file-browser)
+require("telescope").setup({
+  extensions = {
+    file_browser = {
+      hijack_netrw = true,
+      hidden = true,
+      -- ... other options
+    }
+  }
+})
+
+-- After (filebrowser-picker)
+require("filebrowser-picker").setup({
+  hijack_netrw = true,  -- Same option name!
+  hidden = true,
+  -- ... other options work similarly
+})
 ```
 
 ## Acknowledgments

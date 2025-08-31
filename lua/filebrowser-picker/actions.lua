@@ -5,6 +5,7 @@ local util = require("filebrowser-picker.util")
 local scanner = require("filebrowser-picker.scanner")
 local notify = require("filebrowser-picker.notify")
 local git = require("filebrowser-picker.git")
+local delete = require("filebrowser-picker.delete")
 
 ---@class FileBrowserItem
 ---@field file string Absolute path to the file/directory
@@ -814,93 +815,8 @@ function M.paste(picker)
 	end)
 end
 
----Helper: Check if directory is empty
----@param path string
----@return boolean
-local function is_directory_empty(path)
-	local handle = uv.fs_scandir(path)
-	if not handle then
-		return false
-	end
 
-	local name = uv.fs_scandir_next(handle)
-	return name == nil
-end
-
----Helper: Recursively delete directory using vim.uv
----@param path string
----@return boolean success
----@return string? error
-local function delete_directory_recursive(path)
-	local handle = uv.fs_scandir(path)
-	if not handle then
-		return false, "Cannot scan directory"
-	end
-
-	-- First delete all contents
-	while true do
-		local name, type = uv.fs_scandir_next(handle)
-		if not name then
-			break
-		end
-
-		local child_path = path .. "/" .. name
-		local success, err
-
-		if type == "directory" then
-			-- Recursively delete subdirectories
-			success, err = delete_directory_recursive(child_path)
-		else
-			-- Delete files and other types
-			success, err = uv.fs_unlink(child_path)
-		end
-
-		if not success then
-			return false, err or ("Failed to delete " .. name)
-		end
-	end
-
-	-- Finally delete the empty directory
-	local success, err = uv.fs_rmdir(path)
-	return success ~= nil, err
-end
-
----Helper: Delete a single file or directory with enhanced error handling
----@param item FileBrowserItem
----@param force_recursive? boolean Skip confirmation for recursive deletion
----@return boolean success
----@return string? error
-local function delete_single_item(item, force_recursive)
-	if item.dir then
-		-- Handle directory deletion
-		if is_directory_empty(item.file) then
-			-- Empty directory - use fs_rmdir
-			local success, err = uv.fs_rmdir(item.file)
-			if success then
-				return true
-			else
-				return false, err or "Failed to remove directory"
-			end
-		else
-			-- Non-empty directory
-			if force_recursive then
-				return delete_directory_recursive(item.file)
-			else
-				return false, "Directory not empty (use recursive delete)"
-			end
-		end
-	else
-		-- Handle file deletion
-		local success, err = uv.fs_unlink(item.file)
-		if success then
-			return true
-		else
-			return false, err or "Failed to delete file"
-		end
-	end
-end
-
----Action: Delete selected file(s) - supports multi-file selection
+---Action: Delete selected file(s) - supports multi-file selection with safety features
 ---@param picker any
 ---@param item? FileBrowserItem
 function M.delete(picker, item)
@@ -915,74 +831,17 @@ function M.delete(picker, item)
 		return
 	end
 
-	-- Check for non-empty directories that need recursive deletion
-	local non_empty_dirs = {}
-	for _, itm in ipairs(selected_items) do
-		if itm.dir and not is_directory_empty(itm.file) then
-			table.insert(non_empty_dirs, itm.text)
+	-- Get options from picker configuration
+	local opts = (picker and picker.opts and picker.opts.opts) or {}
+	
+	-- Use the new safe delete module
+	delete.delete_items(selected_items, opts, function(success)
+		if success then
+			-- Clear selection and refresh
+			picker.list:set_selected()
+			picker:find({ refresh = true })
 		end
-	end
-
-	local function perform_deletion(force_recursive)
-		local deleted_count = 0
-		local errors = {}
-
-		-- Delete each file/directory
-		for _, itm in ipairs(selected_items) do
-			local ok, err = delete_single_item(itm, force_recursive)
-
-			if ok then
-				deleted_count = deleted_count + 1
-			else
-				table.insert(errors, itm.text .. ": " .. (err or "unknown error"))
-			end
-		end
-
-		-- Clear selection and refresh
-		picker.list:set_selected()
-		picker:find({ refresh = true })
-
-		-- Report results
-		notify.operation_result("deleted", deleted_count, #selected_items, #errors > 0 and errors or nil)
-	end
-
-	-- If we have non-empty directories, show enhanced confirmation
-	if #non_empty_dirs > 0 then
-		local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
-		local dir_warning = #non_empty_dirs == 1 and "'" .. non_empty_dirs[1] .. "' contains files"
-			or #non_empty_dirs .. " directories contain files"
-
-		vim.ui.select({ "Cancel", "Delete (files only)", "Delete recursively" }, {
-			prompt = "Delete " .. what .. "?\n" .. dir_warning .. " - choose option:",
-		}, function(_, idx)
-			if idx == 2 then
-				-- Delete files only, skip non-empty directories
-				perform_deletion(false)
-			elseif idx == 3 then
-				-- Strong confirmation for recursive deletion
-				vim.ui.input({
-					prompt = "Type 'Delete' to confirm recursive deletion: ",
-				}, function(input)
-					if input == "Delete" then
-						perform_deletion(true)
-					else
-						notify.cancelled("deletion")
-					end
-				end)
-			end
-		end)
-	else
-		-- Standard confirmation for files and empty directories
-		local what = #selected_items == 1 and selected_items[1].text or #selected_items .. " files"
-
-		vim.ui.select({ "No", "Yes" }, {
-			prompt = "Delete " .. what .. "?",
-		}, function(_, idx)
-			if idx == 2 then
-				perform_deletion(false)
-			end
-		end)
-	end
+	end)
 end
 
 ---Action: Edit file in vertical split
@@ -1102,6 +961,14 @@ function M.get_actions()
 		toggle_detailed_view = function(picker)
 			if picker.opts and picker.opts.opts then
 				picker.opts.opts.detailed_view = not picker.opts.opts.detailed_view
+				if picker.update then
+					picker:find({ refresh = true })
+				end
+			end
+		end,
+		toggle_hidden = function(picker)
+			if picker.opts and picker.opts.opts then
+				picker.opts.opts.hidden = not picker.opts.opts.hidden
 				if picker.update then
 					picker:find({ refresh = true })
 				end

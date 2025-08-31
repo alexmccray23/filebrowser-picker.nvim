@@ -3,9 +3,12 @@ local M = {}
 
 local uv = vim.uv or vim.loop
 
--- Cache for git status results
+-- Cache for git status results (keyed by git root realpath)
 local git_cache = {}
 local CACHE_TTL = 15 * 60 * 1000 -- 15 minutes in milliseconds
+
+-- Cache for .git/index mtime to invalidate cache efficiently
+local index_mtime_cache = {}
 
 -- Git status mappings from porcelain format
 local STATUS_CODES = {
@@ -37,7 +40,7 @@ local STATUS_PRIORITY = {
 	ignored = 1,
 }
 
----Get git root for a given path
+---Get git root for a given path with realpath normalization
 ---@param path string
 ---@return string|nil
 local function get_git_root(path)
@@ -46,7 +49,9 @@ local function get_git_root(path)
 		local git_dir = current .. "/.git"
 		local stat = uv.fs_stat(git_dir)
 		if stat then
-			return current
+			-- Use realpath to ensure consistent cache keys
+			local real_path = uv.fs_realpath(current)
+			return real_path or current
 		end
 		current = current:match("^(.+)/[^/]*$") or "/"
 	end
@@ -138,6 +143,27 @@ local function fetch_git_status(root_path, callback)
 	end)
 end
 
+---Check if git index has changed since last cache
+---@param git_root string Git repository root
+---@return boolean changed Whether index has changed
+local function has_index_changed(git_root)
+	local index_path = git_root .. "/.git/index"
+	local stat = uv.fs_stat(index_path)
+	if not stat then
+		return false -- No index file, consider unchanged
+	end
+	
+	local current_mtime = stat.mtime.sec
+	local cached_mtime = index_mtime_cache[git_root]
+	
+	if cached_mtime ~= current_mtime then
+		index_mtime_cache[git_root] = current_mtime
+		return true
+	end
+	
+	return false
+end
+
 ---Get git status for a file or directory
 ---@param file_path string Absolute path to file
 ---@param callback function(status: string|nil)
@@ -151,8 +177,12 @@ function M.get_status(file_path, callback)
 	local cached = git_cache[git_root]
 	local now = uv.now()
 
-	-- Use cached results if available and not expired
-	if cached and (now - cached.timestamp) < CACHE_TTL then
+	-- Check if cache is valid (not expired and index hasn't changed)
+	local cache_valid = cached and 
+		(now - cached.timestamp) < CACHE_TTL and 
+		not has_index_changed(git_root)
+
+	if cache_valid then
 		local relative_path = file_path:sub(#git_root + 2) -- Remove git_root/ prefix
 		callback(cached.status_map[relative_path])
 		return
@@ -176,6 +206,11 @@ function M.get_status_sync(file_path)
 
 	local cached = git_cache[git_root]
 	if not cached then
+		return nil
+	end
+
+	-- If index has changed significantly, return nil to trigger refresh
+	if has_index_changed(git_root) then
 		return nil
 	end
 
@@ -210,8 +245,12 @@ function M.preload_status(dir_path, on_complete)
 		M.watch_repo(git_root, on_complete)
 	end
 
-	-- Skip if cache is still fresh
-	if cached and (now - cached.timestamp) < CACHE_TTL then
+	-- Check if cache is valid (not expired and index hasn't changed)
+	local cache_valid = cached and 
+		(now - cached.timestamp) < CACHE_TTL and 
+		not has_index_changed(git_root)
+
+	if cache_valid then
 		if on_complete then
 			on_complete()
 		end
