@@ -17,7 +17,7 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 
 ## Requirements
 
-- Neovim >= 0.9.0
+- Neovim >= 0.9.4
 - [snacks.nvim](https://github.com/folke/snacks.nvim)
 
 ### Optional Dependencies
