@@ -132,7 +132,7 @@ local function install_format_patch(actions, util_mod, stat_mod, git_mod)
 
 		-- Detailed view
 		local display_stat = opts.display_stat or stat_mod.default_stats
-		local stat_components = stat_mod.build_stat_display(item, display_stat)
+		local stat_components = stat_mod.build_stat_display(item, display_stat, opts)
 
 		-- Fixed stat width for clean alignment
 		local stat_width = stat_mod.calculate_stat_width(display_stat)

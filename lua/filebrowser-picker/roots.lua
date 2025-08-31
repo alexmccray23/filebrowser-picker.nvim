@@ -36,14 +36,20 @@ function M.normalize_roots(opts)
 	return roots
 end
 
----Generate title for picker showing current root context
+---Generate title for picker showing current root context with enhanced badge
 ---@param root_idx number Current root index
 ---@param roots string[] All available roots
 ---@param dir? string Current directory (defaults to active root)
 ---@return string Formatted title
 function M.title_for(root_idx, roots, dir)
 	local path = dir or roots[root_idx]
-	return (#roots > 1) and string.format("[%d/%d] %s", root_idx, #roots, path) or path
+	if #roots > 1 then
+		-- Enhanced multi-root badge with root name
+		local root_name = vim.fn.fnamemodify(roots[root_idx], ":t") or "root"
+		return string.format("󰉋 [%d/%d:%s] %s", root_idx, #roots, root_name, path)
+	else
+		return path
+	end
 end
 
 ---Discover potential workspace roots (git, LSP, home, cwd)
@@ -185,6 +191,78 @@ function M.create_actions(state, ui_select)
 				state.idx = #state.roots
 			end
 			update_picker_root(picker)
+		end,
+
+		root_jump = function(picker)
+			if #state.roots <= 1 then
+				notify.info("Only one root available")
+				return
+			end
+			
+			-- Create formatted list of roots for selection
+			local root_options = {}
+			for i, root in ipairs(state.roots) do
+				local display = string.format("[%d] %s", i, root)
+				if i == state.idx then
+					display = display .. " (current)"
+				end
+				table.insert(root_options, display)
+			end
+			
+			ui_select(root_options, "Jump to root:", function(choice, idx)
+				if choice and idx then
+					update_picker_root(picker, state.roots[idx], idx)
+				end
+			end)
+		end,
+
+		show_recent_dirs = function(picker)
+			local history = require("filebrowser-picker.history")
+			local opts = (picker and picker.opts and picker.opts.opts) or {}
+			local recent_dirs = history.get_recent_dirs(opts.history_file, 10)
+			
+			if #recent_dirs == 0 then
+				notify.info("No recent directories")
+				return
+			end
+			
+			ui_select(recent_dirs, "Recent directories:", function(choice)
+				if choice then
+					-- Navigate to selected directory
+					local current = picker:cwd()
+					if current ~= choice then
+						picker:set_cwd(choice)
+						picker:find({ refresh = true })
+					end
+				end
+			end)
+		end,
+
+		show_recent_roots = function(picker)
+			local history = require("filebrowser-picker.history")
+			local opts = (picker and picker.opts and picker.opts.opts) or {}
+			local recent_roots = history.get_recent_roots(opts.history_file, 5)
+			
+			if #recent_roots == 0 then
+				notify.info("No recent root configurations")
+				return
+			end
+			
+			local root_options = {}
+			for _, entry in ipairs(recent_roots) do
+				local display = table.concat(entry.roots, ", ")
+				table.insert(root_options, display)
+			end
+			
+			ui_select(root_options, "Recent root configurations:", function(choice, idx)
+				if choice and idx then
+					local selected_roots = recent_roots[idx].roots
+					-- Update current state with selected roots
+					state.roots = selected_roots
+					state.idx = 1
+					update_picker_root(picker, selected_roots[1], 1)
+				end
+			end)
 		end,
 	}
 end

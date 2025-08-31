@@ -158,12 +158,20 @@ end
 
 ---Format file size in human readable format
 ---@param size number Size in bytes
+---@param format? "auto"|"bytes" Format type (default: "auto")
 ---@return string
-function M.format_size(size)
+function M.format_size(size, format)
 	if not size then
 		return "0"
 	end
 
+	format = format or "auto"
+	
+	if format == "bytes" then
+		return tostring(size) .. "B"
+	end
+
+	-- Auto format (human readable)
 	local units = { "B", "K", "M", "G", "T" }
 	local unit_idx = 1
 	local file_size = size
@@ -180,14 +188,21 @@ function M.format_size(size)
 	end
 end
 
----Format timestamp in ls -l style
+---Format timestamp with customizable format
 ---@param timestamp number Unix timestamp
+---@param format? string Date format string (default: auto-detect)
 ---@return string
-function M.format_timestamp(timestamp)
+function M.format_timestamp(timestamp, format)
 	if not timestamp then
 		return ""
 	end
 
+	if format then
+		-- Use custom format string
+		return os.date(format, timestamp)
+	end
+
+	-- Default ls -l style behavior
 	local now = os.time()
 	local diff = now - timestamp
 
@@ -279,18 +294,39 @@ function M.scan_directory(dir, opts)
 		::continue::
 	end
 
-	-- Sort items: directories first, then files, alphabetically
-	table.sort(items, function(a, b)
-		if a.dir and not b.dir then
-			return true
-		elseif not a.dir and b.dir then
-			return false
-		else
-			return a.text:lower() < b.text:lower()
-		end
-	end)
+	-- Sort items with configurable sort field
+	M.sort_items(items, opts)
 
 	return items
+end
+
+---Sort file items based on configuration
+---@param items FileBrowserItem[] Items to sort
+---@param opts table Options containing sort_by and sort_reverse
+function M.sort_items(items, opts)
+	local sort_by = opts.sort_by or "name"
+	local sort_reverse = opts.sort_reverse or false
+	
+	table.sort(items, function(a, b)
+		-- Always put directories first
+		if a.dir and not b.dir then
+			return not sort_reverse
+		elseif not a.dir and b.dir then
+			return sort_reverse
+		end
+		
+		-- Both are same type, sort by specified field
+		local result
+		if sort_by == "size" then
+			result = (a.size or 0) < (b.size or 0)
+		elseif sort_by == "mtime" then
+			result = (a.mtime or 0) < (b.mtime or 0)
+		else -- name (default)
+			result = a.text:lower() < b.text:lower()
+		end
+		
+		return sort_reverse and not result or result
+	end)
 end
 
 -- ========================================================================

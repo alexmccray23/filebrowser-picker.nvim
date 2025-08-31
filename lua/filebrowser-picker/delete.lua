@@ -261,6 +261,17 @@ function M.delete_items(selected_items, opts, on_complete)
 		local action = opts.use_trash and find_trash_cmd() and "moved to trash" or "deleted"
 		notify.operation_result(action, deleted_count, #selected_items, #errors > 0 and errors or nil)
 		
+		-- Emit file deleted event if any files were deleted
+		if deleted_count > 0 then
+			local events = require("filebrowser-picker.events")
+			events.emit(events.events.FILE_DELETED, {
+				items = selected_items,
+				deleted_count = deleted_count,
+				use_trash = opts.use_trash and find_trash_cmd() and true or false,
+				errors = #errors > 0 and errors or nil,
+			})
+		end
+		
 		if on_complete then
 			on_complete(deleted_count > 0)
 		end

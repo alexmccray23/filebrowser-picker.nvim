@@ -6,6 +6,8 @@ local actions = require("filebrowser-picker.actions")
 local util = require("filebrowser-picker.util")
 local roots = require("filebrowser-picker.roots")
 local finder = require("filebrowser-picker.finder")
+local history = require("filebrowser-picker.history")
+local events = require("filebrowser-picker.events")
 
 ---@class FileBrowserPicker
 ---@field actions table<string, function>
@@ -17,11 +19,17 @@ M.actions = actions
 -- Export config module for access
 M.config = config.get()
 
+-- Export events module for easy access
+M.events = events
+
 ---Setup the file browser picker with user configuration
 ---@param user_opts? table User configuration options
 function M.setup(user_opts)
 	-- Use config module to handle configuration
 	M.config = config.setup(user_opts)
+
+	-- Setup events system
+	events.setup()
 
 	-- Enable performance optimizations if requested
 	if M.config.performance then
@@ -120,8 +128,21 @@ function M.file_browser(opts)
 		error("filebrowser-picker.nvim requires snacks.nvim")
 	end
 
+	-- Handle resume functionality
+	if opts.resume_last and not opts.cwd and not opts.roots then
+		local last_dir = history.get_last_dir(opts.history_file)
+		if last_dir then
+			opts.cwd = last_dir
+		end
+	end
+
 	-- Initialize multi-root state
 	local root_list = roots.normalize_roots(opts)
+	
+	-- Add roots to history for future recall
+	if #root_list > 1 then
+		history.add_roots_to_history(root_list, opts.history_file)
+	end
 
 	-- Auto-detect use_file_finder based on number of roots
 	if opts.use_file_finder == nil then
@@ -176,6 +197,10 @@ function M.file_browser(opts)
 
 	local initial_cwd = active_root()
 
+	-- Emit enter event
+	local enter_callback = events.create_callback_wrapper(events.events.ENTER, opts.on_enter)
+	enter_callback(opts)
+
 	-- Store opts on the picker for actions to access
 	local picker_opts = {
 		cwd = initial_cwd,
@@ -199,23 +224,48 @@ function M.file_browser(opts)
 				keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
 					["gr"] = "root_add_here",
 					["gR"] = "root_add_path",
-					["<leader>wr"] = "root_pick_suggested",
+					["<leader>wr"] = "root_pick_suggested", 
 					["<leader>wR"] = "root_remove",
 					["<C-p>"] = "cycle_roots_prev",
+					["<leader>rj"] = "root_jump",  -- Quick root jump overlay
+					["<leader>rh"] = "show_recent_dirs",  -- Recent directories
+					["<leader>rR"] = "show_recent_roots",  -- Recent root configs
 				})),
 			},
 			list = {
 				keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
 					["gr"] = "root_add_here",
-					["gR"] = "root_add_path",
+					["gR"] = "root_add_path", 
 					["<leader>wr"] = "root_pick_suggested",
 					["<leader>wR"] = "root_remove",
 					["<C-p>"] = "cycle_roots_prev",
+					["<leader>rj"] = "root_jump",  -- Quick root jump overlay
+					["<leader>rh"] = "show_recent_dirs",  -- Recent directories
+					["<leader>rR"] = "show_recent_roots",  -- Recent root configs
 				})),
 			},
 		},
 
-		on_close = finder.create_cleanup_function(),
+		on_close = function()
+			-- Emit leave event
+			local leave_callback = events.create_callback_wrapper(events.events.LEAVE, opts.on_leave)
+			leave_callback()
+			
+			-- Run cleanup
+			local cleanup = finder.create_cleanup_function()
+			if cleanup then cleanup() end
+		end,
+		
+		-- Track directory changes for history and emit events
+		on_cwd_change = function(new_cwd)
+			if opts.resume_last or opts.history_file then
+				history.add_to_history(new_cwd, opts.history_file)
+			end
+			
+			-- Emit dir changed event
+			local dir_change_callback = events.create_callback_wrapper(events.events.DIR_CHANGED, opts.on_dir_change)
+			dir_change_callback(new_cwd)
+		end,
 	}
 
 	return Snacks.picker.pick(picker_opts)

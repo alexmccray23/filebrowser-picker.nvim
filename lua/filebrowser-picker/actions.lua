@@ -6,6 +6,7 @@ local scanner = require("filebrowser-picker.scanner")
 local notify = require("filebrowser-picker.notify")
 local git = require("filebrowser-picker.git")
 local delete = require("filebrowser-picker.delete")
+local events = require("filebrowser-picker.events")
 
 ---@class FileBrowserItem
 ---@field file string Absolute path to the file/directory
@@ -67,7 +68,6 @@ function M.create_file_finder(opts, roots, ctx)
 
 		local scan_fn = scanner.build_scanner(scan_opts, roots)
 		local item_count = 0
-		local batch_size = 100
 
 		local cancel_scan = scan_fn(function(file_path)
 			-- Create file item
@@ -85,11 +85,22 @@ function M.create_file_finder(opts, roots, ctx)
 				mode = stat and stat.mode or nil,
 			})
 
-			-- Batch updates for performance
+			-- Smart auto-tuning batching for performance
 			item_count = item_count + 1
-			if item_count % batch_size == 0 then
-				-- Allow UI to update
-				vim.schedule(function() end)
+			
+			-- Auto-tune batch size and delay based on current count
+			local current_batch_size, delay
+			if item_count <= 100 then
+				current_batch_size, delay = 25, 16
+			elseif item_count <= 1000 then
+				current_batch_size, delay = 100, 32
+			else
+				current_batch_size, delay = 200, 64
+			end
+			
+			if item_count % current_batch_size == 0 then
+				-- Use adaptive delay for UI updates
+				vim.defer_fn(function() end, delay)
 			end
 		end, function()
 			-- Scan complete
@@ -149,7 +160,7 @@ function M.format_item(item, opts)
 
 		-- Use default stats if display_stat is not configured
 		local display_stat = opts.display_stat or stat_module.default_stats
-		local stat_components = stat_module.build_stat_display(item, display_stat)
+		local stat_components = stat_module.build_stat_display(item, display_stat, opts)
 
 		-- Build inline display like telescope-file-browser
 		result = {
@@ -324,6 +335,11 @@ function M.confirm(picker, item)
 		-- Navigate to directory (without state management for backward compatibility)
 		navigate_to_directory(picker, item.file)
 	else
+		-- Emit confirm event
+		local opts = (picker and picker.opts and picker.opts.opts) or {}
+		local confirm_callback = events.create_callback_wrapper(events.events.CONFIRM, opts.on_confirm)
+		confirm_callback(item)
+		
 		-- Open file and close picker
 		picker:close()
 		vim.cmd("edit " .. vim.fn.fnameescape(item.file))
@@ -355,6 +371,11 @@ function M.confirm_with_state(picker, item, state)
 		-- Navigate to directory with state management
 		navigate_to_directory(picker, item.file, state)
 	else
+		-- Emit confirm event
+		local opts = (picker and picker.opts and picker.opts.opts) or {}
+		local confirm_callback = events.create_callback_wrapper(events.events.CONFIRM, opts.on_confirm)
+		confirm_callback(item)
+		
 		-- Open file and close picker
 		picker:close()
 		vim.cmd("edit " .. vim.fn.fnameescape(item.file))
@@ -599,6 +620,13 @@ function M.create_file(picker)
 		-- Report what was created
 		if success then
 			notify.created(created_items)
+			
+			-- Emit file created event
+			events.emit(events.events.FILE_CREATED, {
+				path = target_path,
+				is_directory = is_directory,
+				items = created_items,
+			})
 
 			-- Refresh picker
 			picker:find({ refresh = true })
@@ -618,6 +646,13 @@ function M.rename(picker, item)
 		from = item.file,
 		on_rename = function(new_path, old_path, ok)
 			if ok then
+				-- Emit file renamed event
+				events.emit(events.events.FILE_RENAMED, {
+					old_path = old_path,
+					new_path = new_path,
+					item = item,
+				})
+				
 				-- Refresh picker after successful rename
 				picker:find({ refresh = true })
 			end
@@ -970,6 +1005,43 @@ function M.get_actions()
 			if picker.opts and picker.opts.opts then
 				picker.opts.opts.hidden = not picker.opts.opts.hidden
 				if picker.update then
+					picker:find({ refresh = true })
+				end
+			end
+		end,
+		toggle_sort_by = function(picker)
+			if picker.opts and picker.opts.opts then
+				local sort_options = {"name", "size", "mtime"}
+				local current = picker.opts.opts.sort_by or "name"
+				local current_idx = 1
+				for i, opt in ipairs(sort_options) do
+					if opt == current then
+						current_idx = i
+						break
+					end
+				end
+				local next_idx = (current_idx % #sort_options) + 1
+				picker.opts.opts.sort_by = sort_options[next_idx]
+				notify.info("Sort by: " .. sort_options[next_idx])
+				picker:find({ refresh = true })
+			end
+		end,
+		toggle_sort_reverse = function(picker)
+			if picker.opts and picker.opts.opts then
+				picker.opts.opts.sort_reverse = not (picker.opts.opts.sort_reverse or false)
+				local direction = picker.opts.opts.sort_reverse and "descending" or "ascending"
+				notify.info("Sort order: " .. direction)
+				picker:find({ refresh = true })
+			end
+		end,
+		toggle_size_format = function(picker)
+			if picker.opts and picker.opts.opts then
+				local formats = {"auto", "bytes"}
+				local current = picker.opts.opts.size_format or "auto"
+				local new_format = current == "auto" and "bytes" or "auto"
+				picker.opts.opts.size_format = new_format
+				notify.info("Size format: " .. new_format)
+				if picker.opts.opts.detailed_view then
 					picker:find({ refresh = true })
 				end
 			end

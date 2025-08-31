@@ -9,6 +9,10 @@ local util = require("filebrowser-picker.util")
 ---@field hidden? boolean Show hidden files (default: false)
 ---@field detailed_view? boolean Show detailed file information like ls -l (default: false)
 ---@field display_stat? table Configure which stats to show in detailed view (default: {mode=true, size=true, date=true})
+---@field size_format? "auto"|"bytes" Size display format (default: "auto")
+---@field date_format? string Date format string for strftime (default: "%b %d %H:%M")
+---@field sort_by? "name"|"size"|"mtime" Primary sort field (default: "name")
+---@field sort_reverse? boolean Reverse sort order (default: false)
 ---@field follow_symlinks? boolean Follow symbolic links (default: false)
 ---@field respect_gitignore? boolean Respect .gitignore (default: true)
 ---@field git_status? boolean Show git status icons (default: true)
@@ -17,6 +21,8 @@ local util = require("filebrowser-picker.util")
 ---@field use_fd? boolean Enable fd for file discovery (default: true)
 ---@field use_rg? boolean Enable ripgrep for file discovery (default: true)
 ---@field excludes? string[] Additional exclude patterns (default: {})
+---@field extra_fd_args? string[] Extra arguments to pass to fd command (default: {})
+---@field extra_rg_args? string[] Extra arguments to pass to rg command (default: {})
 ---@field icons? table Icon configuration
 ---@field keymaps? table<string, string> Key mappings
 ---@field dynamic_layout? boolean Use dynamic layout switching based on window width (default: true)
@@ -25,10 +31,17 @@ local util = require("filebrowser-picker.util")
 ---@field hijack_netrw? boolean Hijack netrw (alias for replace_netrw, for telescope-file-browser compatibility) (default: false)
 ---@field use_trash? boolean Use trash when deleting files (requires trash-cli or similar) (default: true)
 ---@field confirm_rm? "always"|"multi"|"never" When to confirm deletions (default: "always")
+---@field resume_last? boolean Resume at last visited directory (default: false)
+---@field history_file? string Path to history file (default: stdpath("data")/filebrowser-picker/history)
 ---@field performance? table Performance optimization options
 ---@field performance.ui_optimizations? boolean Enable UI performance optimizations (icon caching, formatting) (default: false)
 ---@field performance.refresh_batching? boolean Enable refresh batching for file finder mode (default: false)
 ---@field performance.refresh_rate_ms? number Refresh rate for batching in milliseconds (default: 16)
+---@field on_dir_change? function Callback when directory changes: function(new_dir)
+---@field on_confirm? function Callback when file/directory is confirmed: function(item)
+---@field on_roots_change? function Callback when roots configuration changes: function(roots)
+---@field on_enter? function Callback when filebrowser enters: function(picker_opts)
+---@field on_leave? function Callback when filebrowser exits: function()
 
 ---Default configuration
 ---@type FileBrowserPicker.Config
@@ -42,6 +55,10 @@ M.defaults = {
 		size = true,
 		date = true,
 	},
+	size_format = "auto",
+	date_format = "%b %d %H:%M",
+	sort_by = "name",
+	sort_reverse = false,
 	follow_symlinks = false,
 	respect_gitignore = true,
 	git_status = true,
@@ -60,12 +77,16 @@ M.defaults = {
 	use_fd = true,
 	use_rg = true,
 	excludes = {},
+	extra_fd_args = {},
+	extra_rg_args = {},
 	dynamic_layout = true,
 	layout_width_threshold = 120,
 	replace_netrw = false,
 	hijack_netrw = false,
 	use_trash = true,
 	confirm_rm = "always",
+	resume_last = false,
+	history_file = vim.fn.stdpath("data") .. "/filebrowser-picker/history",
 	performance = {
 		ui_optimizations = false,
 		refresh_batching = false,
@@ -88,6 +109,9 @@ M.defaults = {
 		["<C-t>"] = "set_pwd",
 		["<A-h>"] = "toggle_hidden",
 		["<A-l>"] = "toggle_detailed_view",
+		["<A-s>"] = "toggle_sort_by",
+		["<A-S>"] = "toggle_sort_reverse",
+		["<A-f>"] = "toggle_size_format",
 		["<A-c>"] = "create_file",
 		["<A-r>"] = "rename",
 		["<A-v>"] = "move",

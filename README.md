@@ -162,11 +162,14 @@ require("filebrowser-picker").setup({
 - **Multiple roots**: Navigate between different root directories
 - **Single root**: Navigate up/down the file list (standard picker navigation)
 
-### File Operations
+### File Operations & View Options
 | Key | Action | Description |
 |-----|--------|-------------|
 | `<A-h>` | toggle_hidden | Toggle hidden files |
 | `<A-l>` | toggle_detailed_view | Toggle detailed file information (ls -l style) |
+| `<A-s>` | toggle_sort_by | Cycle sort field (name → size → mtime) |
+| `<A-S>` | toggle_sort_reverse | Toggle sort direction (ascending ⇄ descending) |
+| `<A-f>` | toggle_size_format | Toggle size format (auto ⇄ bytes) |
 | `<A-c>` | create_file | Create new file/directory |
 | `<A-r>` | rename | Rename selected item |
 | `<A-v>` | move | Move selected item(s) |
@@ -200,6 +203,16 @@ require("filebrowser-picker").setup({
     date = true,  -- Last modified date (Jan 15 14:23)
   },
   
+  -- Size display format (default: "auto")
+  size_format = "auto",  -- "auto" (1.2K, 3.4M) or "bytes" (1234, 3456789)
+  
+  -- Date format string for strftime (default: "%b %d %H:%M")
+  date_format = "%b %d %H:%M",  -- Jan 15 14:23
+  
+  -- Sorting options
+  sort_by = "name",       -- "name", "size", or "mtime"
+  sort_reverse = false,   -- Reverse sort order
+  
   -- Follow symbolic links (default: false) 
   follow_symlinks = false,
   
@@ -212,6 +225,10 @@ require("filebrowser-picker").setup({
   -- Safe deletion options
   use_trash = true,        -- Use trash command when available (default: true)
   confirm_rm = "always",   -- "always", "multi" (>1 files), or "never" (default: "always")
+  
+  -- Resume functionality
+  resume_last = false,     -- Resume at last visited directory (default: false)
+  history_file = vim.fn.stdpath("data") .. "/filebrowser-picker/history",  -- History file path
   
   -- Respect .gitignore (default: true)
   respect_gitignore = true,
@@ -242,6 +259,10 @@ require("filebrowser-picker").setup({
   -- Additional exclude patterns (beyond .gitignore)
   excludes = {},          -- e.g., { "*.tmp", "build/*" }
   
+  -- Extra arguments to pass to file scanner commands
+  extra_fd_args = {},     -- e.g., { "--max-depth", "3" }
+  extra_rg_args = {},     -- e.g., { "--max-depth", "3" }
+  
   -- Dynamic layout switching based on window width
   dynamic_layout = true,
   layout_width_threshold = 120,  -- Switch to vertical layout below this width
@@ -260,6 +281,13 @@ require("filebrowser-picker").setup({
     refresh_batching = false,     -- Enable for file finder mode, large codebases
     refresh_rate_ms = 16,         -- Refresh rate (~60fps)
   },
+  
+  -- Event callbacks
+  on_dir_change = function(new_dir) end,        -- Called when directory changes
+  on_confirm = function(item) end,              -- Called when file/directory is confirmed
+  on_roots_change = function(roots) end,        -- Called when roots configuration changes
+  on_enter = function(picker_opts) end,         -- Called when filebrowser enters
+  on_leave = function() end,                    -- Called when filebrowser exits
   
   -- Custom keymaps
   keymaps = {
@@ -447,6 +475,99 @@ require("filebrowser-picker.perf_batch").install({ refresh_ms = 16 })
 | **Detailed view usage** | `ui_optimizations = true` for formatting optimizations |  
 | **Multi-root workflows** | `refresh_batching = true` for smooth file discovery |
 | **General usage** | External tools (fd/rg) usually sufficient |
+
+## Events System
+
+The plugin provides a comprehensive event system for integration with other plugins and custom workflows:
+
+### Event Callbacks
+
+Configure event callbacks in your setup:
+
+```lua
+require("filebrowser-picker").setup({
+  on_enter = function(picker_opts)
+    print("File browser opened with options:", vim.inspect(picker_opts))
+  end,
+  
+  on_leave = function()
+    print("File browser closed")
+  end,
+  
+  on_dir_change = function(new_dir)
+    print("Changed to directory:", new_dir)
+  end,
+  
+  on_confirm = function(item)
+    print("Confirmed file:", item.file)
+  end,
+  
+  on_roots_change = function(roots)
+    print("Root configuration changed:", vim.inspect(roots))
+  end,
+})
+```
+
+### User Autocommands
+
+The plugin emits User autocommands for all major events:
+
+```lua
+vim.api.nvim_create_autocmd("User", {
+  pattern = "FilebrowserEnter",
+  callback = function(ev)
+    print("File browser entered:", vim.inspect(ev.data))
+  end,
+})
+
+vim.api.nvim_create_autocmd("User", {
+  pattern = "FilebrowserDirChanged", 
+  callback = function(ev)
+    print("Directory changed to:", ev.data.dir)
+  end,
+})
+
+vim.api.nvim_create_autocmd("User", {
+  pattern = "FilebrowserFileDeleted",
+  callback = function(ev)
+    print("Files deleted:", ev.data.deleted_count)
+    if ev.data.use_trash then
+      print("Used trash for deletion")
+    end
+  end,
+})
+```
+
+### Available Events
+
+| Event | Description | Data |
+|-------|-------------|------|
+| `FilebrowserEnter` | Picker opened | `picker_opts` |
+| `FilebrowserLeave` | Picker closed | none |
+| `FilebrowserDirChanged` | Directory navigation | `{ dir = string }` |
+| `FilebrowserFileConfirmed` | File/directory confirmed | `{ item = table }` |
+| `FilebrowserRootsChanged` | Root configuration changed | `{ roots = table }` |
+| `FilebrowserFileCreated` | File/directory created | `{ path = string, is_dir = boolean }` |
+| `FilebrowserFileRenamed` | File/directory renamed | `{ old_path = string, new_path = string }` |
+| `FilebrowserFileDeleted` | Files deleted | `{ items = table, deleted_count = number, use_trash = boolean }` |
+
+### Resume Functionality
+
+Enable resume functionality to automatically return to your last visited directory:
+
+```lua
+require("filebrowser-picker").setup({
+  resume_last = true,  -- Resume at last visited directory
+  history_file = vim.fn.stdpath("data") .. "/filebrowser-picker/history",  -- Custom history location
+})
+```
+
+**Features:**
+- **Persistent history**: Remembers visited directories across Neovim sessions
+- **Root configurations**: Tracks multi-root setups for quick recall
+- **JSON storage**: Human-readable format in `stdpath("data")/filebrowser-picker/history`
+- **Automatic cleanup**: Maintains reasonable history file size
+- **Privacy aware**: Only stores directory paths, no file contents
 
 ## Keybindings
 

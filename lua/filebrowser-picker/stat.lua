@@ -17,22 +17,13 @@ local MODE_HL = "NonText" -- same as TelescopePreviewHyphen
 M.size = {
 	width = 5, -- Match telescope width
 	right_justify = true,
-	display = function(item)
-		local size = item.size or 0
-		local formatted_size = size
-
-		for _, v in ipairs(SIZE_TYPES) do
-			local type_size = math.abs(formatted_size)
-			if type_size < 1024.0 then
-				if type_size > 9 then
-					return { string.format("%3d%s", formatted_size, v), SIZE_HL }
-				else
-					return { string.format("%3.1f%s", formatted_size, v), SIZE_HL }
-				end
-			end
-			formatted_size = formatted_size / 1024.0
-		end
-		return { string.format("%.1f%s", formatted_size, "Y"), SIZE_HL }
+	display = function(item, opts)
+		local size_format = opts and opts.size_format or "auto"
+		local size_str = util.format_size(item.size or 0, size_format)
+		
+		-- Right-justify within width
+		local padded = string.format("%5s", size_str)
+		return { padded, SIZE_HL }
 	end,
 }
 
@@ -40,16 +31,18 @@ M.size = {
 M.date = {
 	width = 13, -- Match telescope width
 	right_justify = true,
-	display = function(item)
+	display = function(item, opts)
 		local mtime = item.mtime
 		if not mtime then
 			return { string.format("%13s", ""), DATE_HL }
 		end
 
-		if YEAR ~= os.date("%Y", mtime) then
-			return { os.date("%b %d  %Y", mtime), DATE_HL }
-		end
-		return { os.date("%b %d %H:%M", mtime), DATE_HL }
+		local date_format = opts and opts.date_format
+		local date_str = util.format_timestamp(mtime, date_format)
+		
+		-- Pad to width
+		local padded = string.format("%13s", date_str)
+		return { padded, DATE_HL }
 	end,
 }
 
@@ -146,8 +139,9 @@ end
 --- Build stat display components for an item
 ---@param item FileBrowserItem The file item to display stats for
 ---@param display_stat table Configuration for which stats to display
+---@param opts? table Options containing size_format and date_format
 ---@return table Array of display components { text, highlight }
-function M.build_stat_display(item, display_stat)
+function M.build_stat_display(item, display_stat, opts)
 	local components = {}
 
 	if not display_stat then
@@ -161,7 +155,7 @@ function M.build_stat_display(item, display_stat)
 	for _, stat_name in ipairs(stat_order) do
 		if display_stat[stat_name] and M.stat_types[stat_name] then
 			local stat_config = M.stat_types[stat_name]
-			local result = stat_config.display(item)
+			local result = stat_config.display(item, opts)
 
 			if result then
 				-- Handle mode's special array format vs normal {text, highlight} format

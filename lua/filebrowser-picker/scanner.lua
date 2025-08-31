@@ -104,6 +104,13 @@ local function build_fd_scanner(opts, roots)
 		table.insert(base_args, pattern)
 	end
 
+	-- Add extra fd args if provided
+	if opts.extra_fd_args then
+		for _, arg in ipairs(opts.extra_fd_args) do
+			table.insert(base_args, arg)
+		end
+	end
+
 	return function(on_item, on_done)
 		local cancelers = {}
 		local remaining = #roots
@@ -158,6 +165,13 @@ local function build_rg_scanner(opts, roots)
 	if not opts.respect_gitignore then
 		table.insert(base_args, "--no-ignore")
 		table.insert(base_args, "--no-ignore-vcs")
+	end
+
+	-- Add extra rg args if provided
+	if opts.extra_rg_args then
+		for _, arg in ipairs(opts.extra_rg_args) do
+			table.insert(base_args, arg)
+		end
 	end
 
 	return function(on_item, on_done)
