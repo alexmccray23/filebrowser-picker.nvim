@@ -80,7 +80,7 @@ M.mode = {
     -- Use cached mode when available to avoid per-row fs_stat during rendering
     local mode = item and item.mode
     if not mode then
-      local st = (vim.uv or vim.loop).fs_stat(item.file)
+      local st = (vim.uv or vim.loop).fs_lstat(item.file)
       if not st then
         return { "----------", MODE_HL }
       end

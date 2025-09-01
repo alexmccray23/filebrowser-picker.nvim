@@ -129,13 +129,14 @@ function M.format_permissions(mode)
 
   local perms = ""
 
-  -- File type
-  if band(mode, 0x4000) ~= 0 then
+  -- File type - properly mask to get just file type bits
+  local file_type = band(mode, 0xF000)
+  if file_type == 0x4000 then
     perms = "d" -- directory
-  elseif band(mode, 0xA000) ~= 0 then
+  elseif file_type == 0xA000 then
     perms = "l" -- symlink
   else
-    perms = "-" -- regular file
+    perms = "." -- regular file (using '.' instead of '-')
   end
 
   -- Owner permissions
