@@ -92,6 +92,11 @@ local function build_fd_scanner(opts, roots)
     table.insert(base_args, "--follow")
   end
 
+  -- Add max depth limit
+  local max_depth = opts.max_depth or 32
+  table.insert(base_args, "--max-depth")
+  table.insert(base_args, tostring(max_depth))
+
   -- Add excludes
   local excludes = opts.excludes or {}
   if not opts.respect_gitignore then
@@ -162,6 +167,11 @@ local function build_rg_scanner(opts, roots)
     table.insert(base_args, "--follow")
   end
 
+  -- Add max depth limit  
+  local max_depth = opts.max_depth or 32
+  table.insert(base_args, "--max-depth")
+  table.insert(base_args, tostring(max_depth))
+
   if not opts.respect_gitignore then
     table.insert(base_args, "--no-ignore")
     table.insert(base_args, "--no-ignore-vcs")
@@ -215,6 +225,7 @@ end
 ---@return function
 local function build_uv_scanner(opts, roots)
   local MAX_CONCURRENT = 16
+  local max_depth = opts.max_depth or 32  -- Default depth limit like fd/rg
   local default_excludes = { ".git", "node_modules", ".venv", "__pycache__", ".DS_Store" }
   local excludes = vim.tbl_extend("force", default_excludes, opts.excludes or {})
 
@@ -253,16 +264,68 @@ local function build_uv_scanner(opts, roots)
     return name:sub(1, 1) == "."
   end
 
+  ---Load gitignore patterns from a directory
+  ---@param dir string
+  ---@return table
+  local function load_gitignore_patterns(dir)
+    local patterns = {}
+    local gitignore_path = vim.fs.joinpath(dir, ".gitignore")
+    
+    local stat = uv.fs_stat(gitignore_path)
+    if stat and stat.type == "file" then
+      local fd = uv.fs_open(gitignore_path, "r", 438) -- 438 = 0666
+      if fd then
+        local data = uv.fs_read(fd, stat.size, 0)
+        uv.fs_close(fd)
+        
+        if data then
+          for line in data:gmatch("[^\r\n]+") do
+            line = line:gsub("^%s*", ""):gsub("%s*$", "") -- trim whitespace
+            if line ~= "" and not line:match("^#") then
+              table.insert(patterns, line)
+            end
+          end
+        end
+      end
+    end
+    
+    return patterns
+  end
+
+  ---Check if path matches gitignore patterns
+  ---@param path string
+  ---@param gitignore_patterns table
+  ---@return boolean
+  local function matches_gitignore(path, gitignore_patterns)
+    local name = vim.fs.basename(path)
+    for _, pattern in ipairs(gitignore_patterns) do
+      -- Simple pattern matching - this is a basic implementation
+      if pattern == name or name:match(pattern:gsub("%*", ".*")) then
+        return true
+      end
+    end
+    return false
+  end
+
   return function(on_item, on_done)
-    local queue = vim.deepcopy(roots)
+    -- Initialize queue with depth tracking
+    local queue = {}
+    for _, root in ipairs(roots) do
+      table.insert(queue, { path = root, depth = 0 })
+    end
+    
     local active = 0
     local finished = false
     local visited = {} -- Track visited paths to prevent infinite loops
+    local gitignore_cache = {} -- Cache gitignore patterns per directory
 
-    local function process_directory(dir)
+    local function process_directory(dir_entry)
       if finished then
         return
       end
+      
+      local dir = dir_entry.path
+      local depth = dir_entry.depth
 
       -- Prevent infinite loops with symlinks (async)
       uv.fs_realpath(dir, function(err, real_path)
@@ -271,13 +334,22 @@ local function build_uv_scanner(opts, roots)
           return
         end
         visited[real_path] = true
-        process_directory_impl(dir)
+        process_directory_impl(dir, depth)
       end)
     end
 
-    local function process_directory_impl(dir)
+    local function process_directory_impl(dir, depth)
       if finished then
         return
+      end
+
+      -- Load gitignore patterns for this directory if respecting gitignore
+      local gitignore_patterns = {}
+      if opts.respect_gitignore then
+        if not gitignore_cache[dir] then
+          gitignore_cache[dir] = load_gitignore_patterns(dir)
+        end
+        gitignore_patterns = gitignore_cache[dir]
       end
 
       uv.fs_scandir(dir, function(err, handle)
@@ -302,10 +374,18 @@ local function build_uv_scanner(opts, roots)
               goto continue
             end
 
+            -- Skip gitignore patterns if respecting gitignore
+            if opts.respect_gitignore and matches_gitignore(full_path, gitignore_patterns) then
+              goto continue
+            end
+
             if type == "file" then
               on_item(full_path)
             elseif type == "directory" then
-              table.insert(queue, full_path)
+              -- Only add directory to queue if we haven't exceeded max depth
+              if depth < max_depth then
+                table.insert(queue, { path = full_path, depth = depth + 1 })
+              end
             elseif type == "link" and opts.follow_symlinks then
               -- For symlinks, check what they point to (with loop protection) - async
               uv.fs_realpath(full_path, function(real_err, real_target)
@@ -314,8 +394,8 @@ local function build_uv_scanner(opts, roots)
                     if not stat_err and stat then
                       if stat.type == "file" then
                         on_item(full_path)
-                      elseif stat.type == "directory" then
-                        table.insert(queue, full_path)
+                      elseif stat.type == "directory" and depth < max_depth then
+                        table.insert(queue, { path = full_path, depth = depth + 1 })
                       end
                     end
                   end)
@@ -341,9 +421,9 @@ local function build_uv_scanner(opts, roots)
 
       -- Process up to MAX_CONCURRENT directories
       while active < MAX_CONCURRENT and #queue > 0 do
-        local dir = table.remove(queue, 1)
+        local dir_entry = table.remove(queue, 1)
         active = active + 1
-        process_directory(dir)
+        process_directory(dir_entry)
       end
 
       -- Check if we're done
@@ -387,7 +467,8 @@ function M.build_scanner(opts, roots)
     end
   end
 
-  -- Prefer fd > rg > uv fallback
+  -- Scanner selection priority: fd > rg > uv
+  -- All scanners have good performance - fd/rg offer additional features
   if opts.use_fd and has_executable "fd" then
     return build_fd_scanner(opts, roots)
   elseif opts.use_rg and has_executable "rg" then

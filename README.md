@@ -29,9 +29,9 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 - [mini.icons](https://github.com/echasnovski/mini.icons) _(recommended)_
 - [nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons) _(fallback)_
 
-**For optimal performance:**
-- [`fd`](https://github.com/sharkdp/fd) _(fastest file discovery)_
-- [`ripgrep`](https://github.com/BurntSushi/ripgrep) _(fallback file discovery)_
+**For enhanced file discovery:**
+- [`fd`](https://github.com/sharkdp/fd) _(advanced .gitignore support and exclude patterns)_
+- [`ripgrep`](https://github.com/BurntSushi/ripgrep) _(excellent filtering capabilities)_
 
 **For safe deletion:**
 - [`trash-cli`](https://github.com/andreafrancia/trash-cli) _(Linux)_
@@ -253,9 +253,9 @@ require("filebrowser-picker").setup({
   -- Enable fast file discovery across roots (auto-detected by default)
   use_file_finder = nil,  -- true for multiple roots, false for single root
   
-  -- File discovery tool preferences
-  use_fd = true,          -- Prefer fd (fastest)
-  use_rg = true,          -- Fallback to ripgrep
+  -- File discovery tool preferences  
+  use_fd = true,          -- Enable fd for advanced features
+  use_rg = true,          -- Enable ripgrep as alternative
   
   -- Additional exclude patterns (beyond .gitignore)
   excludes = {},          -- e.g., { "*.tmp", "build/*" }
@@ -396,9 +396,9 @@ require("filebrowser-picker").hijack_netrw()
 The plugin uses intelligent file discovery for optimal performance:
 
 ### Scanner Selection
-- **fd** (`fd-find`): Preferred for speed and excellent .gitignore support
-- **ripgrep** (`rg --files`): Fallback with good performance and filtering
-- **vim.uv**: Built-in Lua scanner with bounded concurrency as final fallback
+- **fd** (`fd-find`): Advanced .gitignore support and sophisticated filtering
+- **ripgrep** (`rg --files`): Excellent performance and regex-based exclusions  
+- **vim.uv**: Built-in scanner with no external dependencies
 
 ### Performance Features
 - **Streaming results**: Files appear as they're discovered, no waiting for full scan
@@ -407,7 +407,7 @@ The plugin uses intelligent file discovery for optimal performance:
 - **Multi-root optimization**: Efficiently scans multiple directory trees in parallel
 
 ### External Dependencies (Optional)
-For best performance, install these tools:
+For enhanced features, install these tools:
 ```bash
 # On most systems
 brew install fd ripgrep  # macOS
@@ -472,10 +472,10 @@ require("filebrowser-picker.perf_batch").install({ refresh_ms = 16 })
 | Scenario | Recommended Configuration |
 |----------|---------------------------|
 | **Large monorepos** | Both `ui_optimizations = true` + `refresh_batching = true` |
-| **Network filesystems** | `ui_optimizations = true` + external tools (fd/rg) |
+| **Network filesystems** | `ui_optimizations = true` with appropriate scanner |
 | **Detailed view usage** | `ui_optimizations = true` for formatting optimizations |  
 | **Multi-root workflows** | `refresh_batching = true` for smooth file discovery |
-| **General usage** | External tools (fd/rg) usually sufficient |
+| **General usage** | Default settings work well for most cases |
 
 ## Events System
 

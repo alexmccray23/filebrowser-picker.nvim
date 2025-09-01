@@ -22,9 +22,9 @@ function M.profile_scanners(opts)
 
   local results = {}
   local scanner_configs = {
-    { name = "fd", opts = { hidden = false, respect_gitignore = true } },
-    { name = "rg", opts = { hidden = false, respect_gitignore = true } },
-    { name = "uv", opts = { hidden = false, respect_gitignore = false } },
+    { name = "fd", opts = { hidden = false, respect_gitignore = true, max_depth = 32 } },
+    { name = "rg", opts = { hidden = false, respect_gitignore = true, max_depth = 32 } },
+    { name = "uv", opts = { hidden = false, respect_gitignore = true, max_depth = 32 } },
   }
 
   -- Test each scanner
@@ -139,10 +139,13 @@ function M._display_results(path, results)
   -- Show recommendations
   local fastest = sorted_scanners[1]
   if fastest and fastest.result.available and not fastest.result.timeout then
-    table.insert(lines, "💡 Recommendation: Use " .. fastest.name .. " scanner for best performance")
-
+    table.insert(lines, "💡 Fastest: " .. fastest.name .. " scanner (" .. fastest.result.files_per_second .. " files/sec)")
+    
+    -- Show balanced perspective
     if fastest.name == "uv" then
-      table.insert(lines, "   Consider installing 'fd' or 'ripgrep' for better performance and .gitignore support")
+      table.insert(lines, "   Note: fd/rg offer additional features like advanced gitignore patterns and exclude options")
+    else
+      table.insert(lines, "   Note: All scanners have good performance - choice depends on specific needs")
     end
   end
 
