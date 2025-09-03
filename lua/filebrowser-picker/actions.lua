@@ -322,21 +322,6 @@ function M.confirm(picker, item)
   -- Check if this should be treated as a directory
   local is_directory = item.dir
 
-  -- Network filesystem safety: double-check directory status if initially detected as file
-  --if not is_directory then
-  --  local stat = uv.fs_stat(item.file)
-  --  is_directory = stat and stat.type == "directory"
-  --end
-
-  ---- For symlinks, also check if they point to directories (when follow_symlinks is enabled)
-  --if not is_directory and item.type == "link" then
-  --  local picker_opts = (picker and picker.opts) or {}
-  --  if picker_opts.follow_symlinks then
-  --    local stat = uv.fs_stat(item.file)
-  --    is_directory = stat and stat.type == "directory"
-  --  end
-  --end
-
   if is_directory then
     -- Navigate to directory (without state management for backward compatibility)
     navigate_to_directory(picker, item.file)
@@ -370,14 +355,6 @@ function M.confirm_with_state(picker, item, state)
     is_directory = stat and stat.type == "directory"
   end
 
-  -- For symlinks, also check if they point to directories (when follow_symlinks is enabled)
-  if not is_directory and item.type == "link" then
-    local picker_opts = (picker and picker.opts) or {}
-    if picker_opts.follow_symlinks then
-      local stat = uv.fs_stat(item.file)
-      is_directory = stat and stat.type == "directory"
-    end
-  end
 
   if is_directory then
     -- Navigate to directory with state management
