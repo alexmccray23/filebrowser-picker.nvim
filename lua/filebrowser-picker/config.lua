@@ -18,6 +18,7 @@ local util = require "filebrowser-picker.util"
 ---@field git_status? boolean Show git status icons (default: true)
 ---@field git_status_hl? table Git status highlight groups (default: see below)
 ---@field use_file_finder? boolean Use fast file discovery across all roots (default: false for single root, true for multiple roots)
+---@field async_directory_scan? boolean Use async directory scanning for network filesystem reliability (default: true)
 ---@field use_fd? boolean Enable fd for file discovery (default: true)
 ---@field use_rg? boolean Enable ripgrep for file discovery (default: true)
 ---@field excludes? string[] Additional exclude patterns (default: {})
@@ -74,6 +75,7 @@ M.defaults = {
     copied = "Special",
   },
   use_file_finder = nil, -- Auto-detect based on roots
+  async_directory_scan = true, -- Use async scanning for network FS reliability
   use_fd = true,
   use_rg = true,
   excludes = {},

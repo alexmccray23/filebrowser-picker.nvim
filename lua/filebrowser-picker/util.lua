@@ -233,7 +233,108 @@ function M.safe_dirname(path)
   return "/" .. table.concat(parts, "/")
 end
 
----Scan directory and return items
+---Async directory scanner based on oil.nvim pattern for network filesystem reliability
+---@param dir string Directory path
+---@param opts table Options
+---@param callback function(items: FileBrowserItem[]) Callback with results
+function M.scan_directory_async(dir, opts, callback)
+  local items = {}
+  
+  -- Preload git status for this directory if enabled
+  if opts.git_status then
+    local git = require "filebrowser-picker.git"
+    git.preload_status(dir, opts._git_refresh_callback)
+  end
+
+  -- Use fs_opendir + fs_readdir like oil.nvim for better network FS support
+  uv.fs_opendir(dir, function(open_err, fd)
+    if open_err then
+      if open_err:match("^ENOENT: no such file or directory") then
+        -- If the directory doesn't exist, treat as success with empty results
+        return callback({})
+      else
+        notify.warn("Failed to scan directory: " .. dir .. " (" .. open_err .. ")")
+        return callback({})
+      end
+    end
+    
+    local function read_entries()
+      uv.fs_readdir(fd, function(err, entries)
+        if err then
+          uv.fs_closedir(fd, function()
+            notify.warn("Error reading directory: " .. dir .. " (" .. err .. ")")
+            callback(items) -- Return what we have so far
+          end)
+          return
+        elseif entries then
+          -- Process entries in parallel with async stat calls
+          local pending = #entries
+          local function complete_entry()
+            pending = pending - 1
+            if pending == 0 then
+              read_entries() -- Continue reading more entries
+            end
+          end
+          
+          for _, entry in ipairs(entries) do
+            local name = entry.name
+            local entry_type = entry.type
+            local path = dir .. "/" .. name
+            local hidden = M.is_hidden(name)
+            
+            -- Skip hidden files if not configured to show them
+            if not opts.hidden and hidden then
+              complete_entry()
+              goto continue
+            end
+            
+            -- Async stat call to avoid blocking on network filesystems
+            uv.fs_stat(path, function(stat_err, stat)
+              if stat then
+                -- Use stat.type as primary source of truth (better for network FS)
+                -- For sshfs/network filesystems, uv.fs_readdir() type may be unreliable,
+                -- so also check stat.type as fallback
+                local is_dir = stat.type == "directory" or entry_type == "directory"
+                if not is_dir and entry_type == "link" and opts.follow_symlinks then
+                  -- For symlinks, check what they actually point to
+                  is_dir = stat.type == "directory"
+                end
+                
+                -- Use stat.type as primary source of truth, with readdir type as fallback
+                local actual_type = stat.type or entry_type or "file"
+                
+                table.insert(items, {
+                  file = path,
+                  text = name,
+                  dir = is_dir,
+                  hidden = hidden,
+                  size = stat.size or 0,
+                  mtime = stat.mtime and stat.mtime.sec or 0,
+                  type = actual_type,
+                  mode = stat.mode,
+                })
+              end
+              complete_entry()
+            end)
+            
+            ::continue::
+          end
+        else
+          -- Done reading all entries
+          uv.fs_closedir(fd, function()
+            -- Sort and return final results
+            M.sort_items(items, opts)
+            callback(items)
+          end)
+        end
+      end)
+    end
+    
+    read_entries()
+  end, 10000) -- 10 second timeout like oil.nvim
+end
+
+---Scan directory and return items (synchronous version kept for compatibility)
 ---@param dir string Directory path
 ---@param opts table Options
 ---@return FileBrowserItem[]

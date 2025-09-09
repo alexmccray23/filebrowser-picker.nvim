@@ -17,7 +17,7 @@ local events = require "filebrowser-picker.events"
 ---@field mtime number Last modified time
 ---@field type string File type (file, directory, symlink)
 
----Create finder for directory browsing (current behavior)
+---Create finder for directory browsing with optional async scanning
 ---@param opts table
 ---@param ctx table
 ---@return function
@@ -25,13 +25,13 @@ function M.create_directory_finder(opts, ctx)
   return function(cb)
     local cwd = ctx.picker:cwd()
     local config = opts or {}
-    local items = util.scan_directory(cwd, config)
 
     -- Add parent directory entry if not at root
     -- Get home directory safely (expand ~ outside of async context)
     local home_dir = (vim.loop.os_homedir()) or ("/home/" .. (os.getenv "USER" or "user"))
+    local parent_entry = nil
     if cwd ~= "/" and cwd ~= home_dir then
-      table.insert(items, 1, {
+      parent_entry = {
         file = util.safe_dirname(cwd),
         text = "../",
         dir = true,
@@ -39,11 +39,34 @@ function M.create_directory_finder(opts, ctx)
         size = 0,
         mtime = 0,
         type = "directory",
-      })
+      }
     end
 
-    for _, item in ipairs(items) do
-      cb(item)
+    -- Use async or sync scanning based on configuration
+    if config.async_directory_scan ~= false then -- Default to async
+      -- Add parent entry immediately for better responsiveness
+      if parent_entry then
+        cb(parent_entry)
+      end
+      
+      -- Use async scanner for network filesystem reliability
+      util.scan_directory_async(cwd, config, function(items)
+        for _, item in ipairs(items) do
+          cb(item)
+        end
+      end)
+    else
+      -- Use synchronous scanning (legacy behavior)
+      local items = util.scan_directory(cwd, config)
+      
+      -- Add parent directory entry if not at root
+      if parent_entry then
+        table.insert(items, 1, parent_entry)
+      end
+
+      for _, item in ipairs(items) do
+        cb(item)
+      end
     end
   end
 end
