@@ -1155,12 +1155,20 @@ function M._move_file(from, to)
 end
 
 ---Convert keymap table to snacks picker format
----@param keymaps table<string, string>
+---@param keymaps table<string, string|table>
 ---@return table
 function M.get_keymaps(keymaps)
   local result = {}
   for key, action in pairs(keymaps) do
-    result[key] = { action, mode = { "n", "i" } }
+    if type(action) == "table" then
+      -- action is a table with action name and optional mode
+      local action_name = action[1]
+      local mode = action.mode or { "n", "i" }
+      result[key] = { action_name, mode = mode }
+    else
+      -- action is a simple string
+      result[key] = { action, mode = { "n", "i" } }
+    end
   end
   return result
 end

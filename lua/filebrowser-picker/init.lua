@@ -222,8 +222,8 @@ function M.file_browser(opts)
     win = {
       input = {
         keys = actions.get_keymaps(vim.tbl_extend("force", opts.keymaps or {}, {
-          ["gr"] = "root_add_here",
-          ["gR"] = "root_add_path",
+          ["gr"] = { "root_add_here", mode = "n" },
+          ["gR"] = { "root_add_path", mode = "n" },
           ["<leader>wr"] = "root_pick_suggested",
           ["<leader>wR"] = "root_remove",
           ["<C-p>"] = "cycle_roots_prev",
