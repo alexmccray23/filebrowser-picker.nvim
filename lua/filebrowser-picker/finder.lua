@@ -21,8 +21,9 @@ end
 ---@param opts table Configuration options
 ---@param state table Multi-root state
 ---@param ctx table Picker context
+---@param setup_git_callback? boolean Whether to set up git refresh callback (skip on initial call)
 ---@return table?, function?, string[]? items, cancel_function, scan_roots
-function M.start_scanner(opts, state, ctx)
+function M.start_scanner(opts, state, ctx, setup_git_callback)
   if not opts.use_file_finder then
     return nil, nil, nil
   end
@@ -37,8 +38,9 @@ function M.start_scanner(opts, state, ctx)
     git_status = opts.git_status,
   }
 
-  -- Add refresh callback for git status updates in file finder mode
-  if opts.git_status and ctx and ctx.picker then
+  -- Add refresh callback for git status updates in file finder mode only on non-initial calls
+  -- During initial call, git status will preload silently without triggering picker:refresh()
+  if setup_git_callback and opts.git_status and ctx and ctx.picker then
     scan_opts._git_refresh_callback = function()
       if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
         ctx.picker:refresh()
@@ -122,6 +124,8 @@ end
 ---@param state table Multi-root state
 ---@return function Finder function
 function M.create_finder(opts, state)
+  local is_initial_call = true
+
   return function(_, ctx)
     -- Merge static and dynamic ctx.picer.opts to enable git signs rendering
     local current_opts = opts
@@ -129,9 +133,15 @@ function M.create_finder(opts, state)
       current_opts = vim.tbl_deep_extend("keep", ctx.picker.opts, opts)
     end
 
+    -- Only set git refresh callback on non-initial calls to avoid stack overflow during picker init
+    -- During initial call, git status will preload silently without triggering picker:refresh()
+    -- which avoids the snacks.nvim stack overflow issue with update_titles
+    local setup_git_callback = not is_initial_call
+    is_initial_call = false
+
     -- Always rebuild scanner on (re)invoke so it follows state changes
     if opts.use_file_finder then
-      local list, cancel = M.start_scanner(current_opts, state, ctx)
+      local list, cancel = M.start_scanner(current_opts, state, ctx, setup_git_callback)
       if ctx and ctx.picker then
         -- Ensure previous scan is cancelled on re-find or close
         if ctx.picker._fbp_cancel_scan and ctx.picker._fbp_cancel_scan ~= cancel then
@@ -143,8 +153,8 @@ function M.create_finder(opts, state)
     else
       local cwd = (ctx and ctx.picker and ctx.picker:cwd()) or state.roots[state.idx]
 
-      -- Add refresh callback for git status updates
-      if current_opts.git_status and ctx and ctx.picker then
+      -- Add refresh callback for git status updates only on non-initial calls
+      if setup_git_callback and current_opts.git_status and ctx and ctx.picker then
         current_opts._git_refresh_callback = function()
           if ctx.picker and not ctx.picker.closed and ctx.picker.refresh then
             ctx.picker:refresh()
