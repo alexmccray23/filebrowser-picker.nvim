@@ -61,6 +61,25 @@ local function with_overrides(entries, fn)
   return result
 end
 
+local function with_health_recorder(fn)
+  local calls = { start = {}, ok = {}, warn = {}, error = {} }
+  local stub = {}
+  for name in pairs(calls) do
+    stub[name] = function(msg)
+      table.insert(calls[name], msg)
+    end
+  end
+  stub._calls = calls
+  local original = vim.health
+  vim.health = stub
+  local ok_call, res = pcall(fn, stub)
+  vim.health = original
+  if not ok_call then
+    error(res)
+  end
+  return stub
+end
+
 -- ============================================================================
 -- Config tests
 -- ============================================================================
@@ -449,6 +468,57 @@ add("file_browser emits lifecycle events and history updates", function()
     ok(vim.tbl_contains(event_names, events.events.ENTER), "ENTER event missing")
     ok(vim.tbl_contains(event_names, events.events.LEAVE), "LEAVE event missing")
     ok(vim.tbl_contains(event_names, events.events.DIR_CHANGED), "DIR event missing")
+  end)
+end)
+
+add("health.check reports dependency status", function()
+  with_tmpdir(function(dir)
+    local config = require "filebrowser-picker.config"
+    local history_file = vim.fn.fnamemodify(dir .. "/history.json", ":p")
+    local original_executable = vim.fn.executable
+
+    local overrides = {
+      { config, "get", function()
+          return vim.tbl_deep_extend("force", {}, config.defaults, {
+            use_fd = true,
+            use_rg = true,
+            history_file = history_file,
+          })
+        end,
+      },
+      { vim.fn, "executable", function(cmd)
+          if cmd == "fd" then
+            return 0
+          elseif cmd == "rg" then
+            return 1
+          elseif cmd == "git" then
+            return 0
+          elseif cmd == "trash" or cmd == "trash-put" then
+            return 0
+          end
+          return original_executable(cmd)
+        end,
+      },
+      { package.loaded, "snacks", {} },
+    }
+
+    local recorder = with_health_recorder(function()
+      with_overrides(overrides, function()
+        package.loaded["filebrowser-picker.health"] = nil
+        local health = require "filebrowser-picker.health"
+        health.check()
+        package.loaded["filebrowser-picker.health"] = nil
+      end)
+    end)
+
+    local ok_msgs = recorder._calls.ok
+    local warn_msgs = recorder._calls.warn
+    eq(#recorder._calls.error, 0, "health check produced errors")
+    ok(vim.tbl_contains(ok_msgs, "snacks.nvim found"), "missing snacks ok message")
+    ok(vim.tbl_contains(warn_msgs, "fd not found; falling back to built-in scanner (set `use_fd=false` to silence)"), "fd warning missing")
+    ok(vim.tbl_contains(warn_msgs, "git not found; git status badges will be disabled"), "git warning missing")
+    ok(vim.tbl_contains(warn_msgs, "No icon provider detected; fallback glyphs will be used"), "icon warning missing")
+    ok(vim.tbl_contains(warn_msgs, "No trash utility detected; deletions will be permanent unless `use_trash` is disabled"), "trash warning missing")
   end)
 end)
 
