@@ -366,6 +366,92 @@ add("file_browser resumes last directory when configured", function()
   end)
 end)
 
+
+add("file_browser emits lifecycle events and history updates", function()
+  with_tmpdir(function(dir)
+    local fb = require "filebrowser-picker"
+    local finder = require "filebrowser-picker.finder"
+    local history = require "filebrowser-picker.history"
+    local events = require "filebrowser-picker.events"
+
+    local captured_pick, captured_finder_opts
+    local event_calls, history_calls = {}, {}
+    local enter_payload, leave_called, dir_callback_arg
+
+    local overrides = {
+      { package.loaded, "snacks", {
+          picker = {
+            pick = function(opts)
+              captured_pick = opts
+              return opts
+            end,
+          },
+        },
+      },
+      { finder, "create_finder", function(opts)
+          captured_finder_opts = vim.deepcopy(opts)
+          return function() return {} end
+        end,
+      },
+      { finder, "create_format_function", function()
+          return function() end
+        end,
+      },
+      { finder, "create_cleanup_function", function()
+          return function() end
+        end,
+      },
+      { history, "add_roots_to_history", function() end },
+      { history, "add_to_history", function(path)
+          table.insert(history_calls, path)
+        end,
+      },
+      { events, "create_callback_wrapper", function(event_name, user_cb)
+          return function(...)
+            table.insert(event_calls, { event = event_name, args = { ... } })
+            if user_cb then
+              user_cb(...)
+            end
+          end
+        end,
+      },
+    }
+
+    fb.setup { hidden = false }
+    local new_dir = vim.fn.fnamemodify(dir .. "/child", ":p")
+    with_overrides(overrides, function()
+      fb.file_browser {
+        cwd = dir,
+        on_enter = function(opts)
+          enter_payload = opts
+        end,
+        on_leave = function()
+          leave_called = true
+        end,
+        on_dir_change = function(path)
+          dir_callback_arg = path
+        end,
+      }
+
+      captured_pick.on_cwd_change(new_dir)
+      captured_pick.on_close()
+    end)
+
+    eq(captured_finder_opts.use_file_finder or false, false)
+    ok(enter_payload and enter_payload.cwd == dir, "on_enter did not receive opts")
+    ok(leave_called, "on_leave was not invoked")
+    eq(dir_callback_arg, new_dir)
+    eq(history_calls[#history_calls], new_dir)
+
+    local event_names = vim.tbl_map(function(call)
+      return call.event
+    end, event_calls)
+    ok(vim.tbl_contains(event_names, events.events.ENTER), "ENTER event missing")
+    ok(vim.tbl_contains(event_names, events.events.LEAVE), "LEAVE event missing")
+    ok(vim.tbl_contains(event_names, events.events.DIR_CHANGED), "DIR event missing")
+  end)
+end)
+
 -- ============================================================================
 -- Runner
 -- ============================================================================
