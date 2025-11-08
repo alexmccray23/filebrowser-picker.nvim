@@ -463,7 +463,7 @@ function M.build_scanner(opts, roots)
   if opts.git_status then
     local git = require "filebrowser-picker.git"
     for _, root in ipairs(roots) do
-      git.preload_status(root, opts._git_refresh_callback)
+      git.preload_status(root, opts._git_refresh_callback, { suppress_cached_callback = true })
     end
   end
 

@@ -243,7 +243,7 @@ function M.scan_directory_async(dir, opts, callback)
   -- Preload git status for this directory if enabled
   if opts.git_status then
     local git = require "filebrowser-picker.git"
-    git.preload_status(dir, opts._git_refresh_callback)
+    git.preload_status(dir, opts._git_refresh_callback, { suppress_cached_callback = true })
   end
 
   -- Use fs_opendir + fs_readdir like oil.nvim for better network FS support
@@ -345,7 +345,7 @@ function M.scan_directory(dir, opts)
   -- Preload git status for this directory if enabled
   if opts.git_status then
     local git = require "filebrowser-picker.git"
-    git.preload_status(dir, opts._git_refresh_callback)
+    git.preload_status(dir, opts._git_refresh_callback, { suppress_cached_callback = true })
   end
 
   if not handle then

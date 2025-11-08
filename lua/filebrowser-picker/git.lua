@@ -229,11 +229,15 @@ end
 ---Preload git status for a directory (optimization for file browsers)
 ---@param dir_path string Directory to preload git status for
 ---@param on_complete function? Optional callback when git status is loaded
-function M.preload_status(dir_path, on_complete)
+---@param opts { suppress_cached_callback?: boolean }? Optional behavior overrides
+function M.preload_status(dir_path, on_complete, opts)
   local git_root = get_git_root(dir_path)
   if not git_root then
     return
   end
+
+  opts = opts or {}
+  local suppress_cached_callback = opts.suppress_cached_callback
 
   local cached = git_cache[git_root]
   local now = uv.now()
@@ -247,8 +251,8 @@ function M.preload_status(dir_path, on_complete)
   local cache_valid = cached and (now - cached.timestamp) < CACHE_TTL and not has_index_changed(git_root)
 
   if cache_valid then
-    if on_complete then
-      on_complete()
+    if on_complete and not suppress_cached_callback then
+      vim.schedule(on_complete)
     end
     return
   end
@@ -257,7 +261,7 @@ function M.preload_status(dir_path, on_complete)
   fetch_git_status(git_root, function(status_map)
     -- Status is now cached for future sync calls
     if on_complete then
-      on_complete()
+      vim.schedule(on_complete)
     end
   end)
 end
