@@ -7,7 +7,7 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 - 🚀 **Fast async operations** powered by snacks.nvim picker
 - 📁 **Persistent directory navigation** like telescope-file-browser
 - 🌳 **Multi-root support** with dynamic workspace management
-- ⚡ **High-performance file discovery** using fd, ripgrep, or fallback scanning
+- ⚡ **High-performance file discovery** using ripgrep, fd, or fallback scanning
 - 📝 **Cross-platform file operations**: create, rename, move, copy, delete using libuv with multi-file selection support
 - 🛡️ **Safe deletion** with trash support and configurable confirmation levels
 - 👁️ **Hidden files toggle**
@@ -30,8 +30,8 @@ Yet another file browser for Neovim, providing telescope-file-browser.nvim's fun
 - [nvim-web-devicons](https://github.com/nvim-tree/nvim-web-devicons) _(fallback)_
 
 **For enhanced file discovery:**
-- [`fd`](https://github.com/sharkdp/fd) _(advanced .gitignore support and exclude patterns)_
 - [`ripgrep`](https://github.com/BurntSushi/ripgrep) _(excellent filtering capabilities)_
+- [`fd`](https://github.com/sharkdp/fd) _(advanced .gitignore support and exclude patterns)_
 
 **For safe deletion:**
 - [`trash-cli`](https://github.com/andreafrancia/trash-cli) _(Linux)_
@@ -109,7 +109,7 @@ require("filebrowser-picker").setup({
   hidden = false,
   respect_gitignore = true,
   roots = { "~/projects", "~/work" },  -- Default roots
-  use_fd = true,  -- Prefer fd over ripgrep
+  use_rg = true,  -- Default scanner
   
   -- Safety features
   use_trash = true,       -- Use trash for deletions (default: true)
@@ -254,15 +254,15 @@ require("filebrowser-picker").setup({
   use_file_finder = nil,  -- true for multiple roots, false for single root
   
   -- File discovery tool preferences  
-  use_fd = true,          -- Enable fd for advanced features
-  use_rg = true,          -- Enable ripgrep as alternative
+  use_rg = true,
+  use_fd = true,
   
   -- Additional exclude patterns (beyond .gitignore)
   excludes = {},          -- e.g., { "*.tmp", "build/*" }
   
   -- Extra arguments to pass to file scanner commands
-  extra_fd_args = {},     -- e.g., { "--max-depth", "3" }
   extra_rg_args = {},     -- e.g., { "--max-depth", "3" }
+  extra_fd_args = {},     -- e.g., { "--max-depth", "3" }
   
   -- Dynamic layout switching based on window width
   dynamic_layout = true,
@@ -396,8 +396,8 @@ require("filebrowser-picker").hijack_netrw()
 The plugin uses intelligent file discovery for optimal performance:
 
 ### Scanner Selection
-- **fd** (`fd-find`): Advanced .gitignore support and sophisticated filtering
 - **ripgrep** (`rg --files`): Excellent performance and regex-based exclusions  
+- **fd** (`fd-find`): Advanced .gitignore support and sophisticated filtering
 - **vim.uv**: Built-in scanner with no external dependencies
 
 ### Performance Features
@@ -410,9 +410,9 @@ The plugin uses intelligent file discovery for optimal performance:
 For enhanced features, install these tools:
 ```bash
 # On most systems
-brew install fd ripgrep  # macOS
-sudo apt install fd-find ripgrep  # Ubuntu/Debian
-sudo pacman -S fd ripgrep  # Arch Linux
+brew install ripgrep fd            # macOS
+sudo apt install ripgrep fd-find   # Ubuntu/Debian
+sudo pacman -S ripgrep fd          # Arch Linux
 ```
 
 ## Performance Optimizations

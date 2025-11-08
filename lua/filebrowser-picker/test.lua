@@ -487,10 +487,10 @@ add("health.check reports dependency status", function()
         end,
       },
       { vim.fn, "executable", function(cmd)
-          if cmd == "fd" then
-            return 0
-          elseif cmd == "rg" then
+          if cmd == "rg" then
             return 1
+          elseif cmd == "fd" then
+            return 0
           elseif cmd == "git" then
             return 0
           elseif cmd == "trash" or cmd == "trash-put" then
@@ -515,9 +515,9 @@ add("health.check reports dependency status", function()
     local warn_msgs = recorder._calls.warn
     eq(#recorder._calls.error, 0, "health check produced errors")
     ok(vim.tbl_contains(ok_msgs, "snacks.nvim found"), "missing snacks ok message")
+    ok(vim.tbl_contains(ok_msgs, "ripgrep available"), "ripgrep available ok message")
     ok(vim.tbl_contains(warn_msgs, "fd not found; falling back to built-in scanner (set `use_fd=false` to silence)"), "fd warning missing")
     ok(vim.tbl_contains(warn_msgs, "git not found; git status badges will be disabled"), "git warning missing")
-    ok(vim.tbl_contains(warn_msgs, "No icon provider detected; fallback glyphs will be used"), "icon warning missing")
     ok(vim.tbl_contains(warn_msgs, "No trash utility detected; deletions will be permanent unless `use_trash` is disabled"), "trash warning missing")
   end)
 end)

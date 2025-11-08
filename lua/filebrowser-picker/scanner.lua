@@ -467,12 +467,12 @@ function M.build_scanner(opts, roots)
     end
   end
 
-  -- Scanner selection priority: fd > rg > uv
-  -- All scanners have good performance - fd/rg offer additional features
-  if opts.use_fd and has_executable "fd" then
-    return build_fd_scanner(opts, roots)
-  elseif opts.use_rg and has_executable "rg" then
+  -- Scanner selection priority: rg > fd > uv
+  -- All scanners have good performance - rg/fd offer additional features
+  if opts.use_rg and has_executable "rg" then
     return build_rg_scanner(opts, roots)
+  elseif opts.use_fd and has_executable "fd" then
+    return build_fd_scanner(opts, roots)
   else
     return build_uv_scanner(opts, roots)
   end

@@ -96,16 +96,16 @@ end
 local function check_cli_tools(cfg)
   start "External CLI tools"
 
-  if cfg.use_fd and vim.fn.executable "fd" == 0 then
-    warn "fd not found; falling back to built-in scanner (set `use_fd=false` to silence)"
-  else
-    ok "fd available"
-  end
-
   if cfg.use_rg and vim.fn.executable "rg" == 0 then
     warn "ripgrep not found; fast filtering disabled (set `use_rg=false` to silence)"
   else
     ok "ripgrep available"
+  end
+
+  if cfg.use_fd and vim.fn.executable "fd" == 0 then
+    warn "fd not found; falling back to built-in scanner (set `use_fd=false` to silence)"
+  else
+    ok "fd available"
   end
 
   if vim.fn.executable "git" == 0 then
