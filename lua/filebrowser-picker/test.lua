@@ -43,6 +43,24 @@ local function with_tmpdir(fn)
   return value
 end
 
+local function with_overrides(entries, fn)
+  local originals = {}
+  for _, entry in ipairs(entries) do
+    local target, key, value = entry[1], entry[2], entry[3]
+    originals[#originals + 1] = { target, key, target[key] }
+    target[key] = value
+  end
+  local ok_call, result = pcall(fn)
+  for i = #originals, 1, -1 do
+    local target, key, original_value = originals[i][1], originals[i][2], originals[i][3]
+    target[key] = original_value
+  end
+  if not ok_call then
+    error(result)
+  end
+  return result
+end
+
 -- ============================================================================
 -- Config tests
 -- ============================================================================
@@ -231,6 +249,120 @@ add("history roots helpers record and filter entries", function()
 
     ok(history.clear_history(history_file))
     eq(vim.fn.filereadable(history_file), 0)
+  end)
+end)
+
+-- ============================================================================
+-- Integration tests
+-- ============================================================================
+
+add("file_browser configures multi-root picker state", function()
+  with_tmpdir(function(dir)
+    local root_a = vim.fn.fnamemodify(dir .. "/a", ":p")
+    local root_b = vim.fn.fnamemodify(dir .. "/b", ":p")
+    vim.fn.mkdir(root_a, "p")
+    vim.fn.mkdir(root_b, "p")
+
+    local fb = require "filebrowser-picker"
+    local finder = require "filebrowser-picker.finder"
+    local history = require "filebrowser-picker.history"
+
+    local captured_pick, captured_finder_opts, captured_state, captured_history_roots
+
+    local overrides = {
+      { package.loaded, "snacks", {
+          picker = {
+            pick = function(opts)
+              captured_pick = opts
+              return opts
+            end,
+          },
+        },
+      },
+      { finder, "create_finder", function(opts, state)
+          captured_finder_opts = vim.deepcopy(opts)
+          captured_state = { roots = vim.deepcopy(state.roots), idx = state.idx }
+          return function() return {} end
+        end,
+      },
+      { finder, "create_format_function", function()
+          return function() end
+        end,
+      },
+      { finder, "create_cleanup_function", function()
+          return function() end
+        end,
+      },
+      { history, "add_roots_to_history", function(roots)
+          captured_history_roots = vim.deepcopy(roots)
+        end,
+      },
+      { history, "add_to_history", function() end },
+    }
+
+    fb.setup { hidden = false }
+    with_overrides(overrides, function()
+      fb.file_browser { roots = { root_a, root_b } }
+    end)
+
+    eq(captured_finder_opts.use_file_finder, true)
+    eq(#captured_state.roots, 2)
+    eq(normalize(captured_state.roots[1]), normalize(root_a))
+    eq(captured_state.idx, 1)
+    eq(normalize(captured_history_roots[2]), normalize(root_b))
+    ok(captured_pick.title:match("%[1/2"))
+  end)
+end)
+
+add("file_browser resumes last directory when configured", function()
+  with_tmpdir(function(dir)
+    local resume_dir = vim.fn.fnamemodify(dir .. "/session", ":p")
+    vim.fn.mkdir(resume_dir, "p")
+
+    local fb = require "filebrowser-picker"
+    local finder = require "filebrowser-picker.finder"
+    local history = require "filebrowser-picker.history"
+
+    local captured_pick, captured_finder_opts
+
+    local overrides = {
+      { package.loaded, "snacks", {
+          picker = {
+            pick = function(opts)
+              captured_pick = opts
+              return opts
+            end,
+          },
+        },
+      },
+      { finder, "create_finder", function(opts)
+          captured_finder_opts = vim.deepcopy(opts)
+          return function() return {} end
+        end,
+      },
+      { finder, "create_format_function", function()
+          return function() end
+        end,
+      },
+      { finder, "create_cleanup_function", function()
+          return function() end
+        end,
+      },
+      { history, "get_last_dir", function()
+          return resume_dir
+        end,
+      },
+      { history, "add_to_history", function() end },
+      { history, "add_roots_to_history", function() end },
+    }
+
+    fb.setup { hidden = false }
+    with_overrides(overrides, function()
+      fb.file_browser { resume_last = true }
+    end)
+
+    eq(normalize(captured_pick.cwd), normalize(resume_dir))
+    eq(captured_finder_opts.use_file_finder or false, false)
   end)
 end)
 
